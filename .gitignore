@@ -1,3 +1,6 @@
+<<<<<<< HEAD
+*~
+=======
 .gitignore
 .rbenv-*
 vendor/rails
@@ -45,3 +48,4 @@ features/plugins
 solr.yml
 /solr
 
+>>>>>>> 58bf016f054437b7c5c495e2f4451bfc23b8f3b5
