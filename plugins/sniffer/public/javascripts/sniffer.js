@@ -37,6 +37,8 @@ sniffer = {
             }
           });
           input.val('');
+          sniffer.search.showFilters();
+          setTimeout(function(){ sniffer.search.hideFilters(); }, 1000);
           return false;
         },
       });
@@ -62,10 +64,12 @@ sniffer = {
     },
 
     showFilters: function () {
-      jQuery('#sniffer-product-search .focus-pane').show();
+      jQuery('#sniffer-product-search .focus-pane')[0].classList.remove('hidden-pane');
+      jQuery('#sniffer-product-search .legend')[0].classList.remove('hidden-pane');
     },
     hideFilters: function () {
-      jQuery('#sniffer-product-search .focus-pane').hide();
+      jQuery('#sniffer-product-search .focus-pane')[0].classList.add('hidden-pane');
+      jQuery('#sniffer-product-search .legend')[0].classList.add('hidden-pane');
     },
 
     updateDistField: function (input) {
