@@ -60,9 +60,8 @@ sniffer = {
           visibleCount++;
         }
       });
-      // Center map to new boundaries
+      // Set bounds to fit all markers
       mapBounds = bounds;
-      mapCenter();
       return visibleCount;
     },
 
@@ -98,10 +97,12 @@ sniffer = {
 
     setCircleRadius: function (distance) {
       if (distance > 0) {
-          sniffer.search.filters.circle.setRadius(distance * 1000);
-          mapBounds = sniffer.search.filters.circle.getBounds();
-          mapCenter();
-      }
+        sniffer.search.filters.circle.setRadius(distance * 1000);
+        mapBounds = sniffer.search.filters.circle.getBounds();
+      } else {
+        sniffer.search.filters.circle.setRadius(0);
+      };
+      mapCenter();
     },
 
     setSubtitle: function (distance, count) {
