@@ -2,18 +2,18 @@
 
 <div id='comment-classification-status-list'>
   <% unless @comment.title.blank? %>
-    <div class='comment-title'><%= _("Title: %s") % @comment.title %></div>
+    <div class='comment-title'><%= c_("Title: %s") % @comment.title %></div>
   <% end %>
 
-  <b><%= _('Body:') %></b>
+  <b><%= c_('Body:') %></b>
   <p><%= @comment.body %></p>
 
-  <h2> <%= _("History") %> </h2>
+  <h2> <%= c_("History") %> </h2>
 
     <ul>
     <% @comment.comment_classification_plugin_comment_status_users.each do |relation| %>
       <li>
-        <%= _("<i>%{user}</i> added the status <i>%{status_name}</i> at <i>%{created_at}</i>.") % { :user => relation.profile.name, :status_name => relation.status.name, :created_at => time_ago_as_sentence(relation.created_at)} %>
+        <%= _("<i>%{user}</i> added the status <i>%{status_name}</i> at <i>%{created_at}</i>.") % { :user => relation.profile.name, :status_name => relation.status.name, :created_at => time_ago_in_words(relation.created_at)} %>
         <% unless relation.reason.blank? %>
           <p><%= _("<i>Reason:</i> %s") % relation.reason %></p>
         <% end %>

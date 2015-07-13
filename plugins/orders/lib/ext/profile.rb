@@ -1,16 +1,8 @@
 require_dependency 'profile'
+require_dependency 'community'
 
-# FIXME move to core
-class Profile
-
-  def has_admin? person
-    return unless person
-    person.has_permission? 'edit_profile', self
-  end
-
-end
-
-class Profile
+([Profile] + Profile.descendants).each do |subclass|
+subclass.class_eval do
 
   # cannot use :order because of months/years named_scope
   has_many :orders, class_name: 'OrdersPlugin::Sale', foreign_key: :profile_id
@@ -18,6 +10,34 @@ class Profile
   has_many :purchases, class_name: 'OrdersPlugin::Purchase', foreign_key: :consumer_id
 
   has_many :ordered_items, through: :orders, source: :items, order: 'name ASC'
+
+  has_many :sales_consumers, through: :sales, source: :consumer
+  has_many :purchases_consumers, through: :sales, source: :consumer
+
+  has_many :sales_profiles, through: :sales, source: :profile
+  has_many :purchases_profiles, through: :sales, source: :profile
+
+end
+end
+
+class Profile
+
+  # FIXME move to core
+  def has_admin? person
+    return unless person
+    person.has_permission? 'edit_profile', self
+  end
+
+  def sales_all_consumers
+    consumers = self.sales_consumers.order 'name ASC'
+    consumers.concat self.suppliers.except_self.order('name ASC') if self.respond_to? :suppliers
+    consumers.uniq
+  end
+  def purchases_all_consumers
+    consumers = self.purchases_consumers.order 'name ASC'
+    consumers.concat self.consumers.except_self.order('name ASC') if self.respond_to? :consumers
+    consumers.uniq
+  end
 
   def self.create_orders_manager_role env_id
     env = Environment.find env_id

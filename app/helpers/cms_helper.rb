@@ -9,12 +9,6 @@ module CmsHelper
     mime_type.gsub('/', '_').gsub('-', '')
   end
 
-  def add_upload_file_field(name, locals)
-    button_to_function :add, name, nil do |page|
-      page.insert_html :bottom, :uploaded_files, CGI::escapeHTML(render(:partial => 'upload_file', :locals => locals, :object => UploadedFile.new))
-    end
-  end
-
   def pagination_links(collection, options={})
     options = {:previous_label => '&laquo; ', :next_label => ' &raquo;', :page_links => false}.merge(options)
     will_paginate(collection, options)
@@ -40,12 +34,8 @@ module CmsHelper
     end
   end
 
-  def display_spread_button(profile, article)
-    if profile.person?
-      expirable_button article, :spread, _('Spread this'), :action => 'publish', :id => article.id
-    elsif profile.community? && environment.portal_community
-      expirable_button article, :spread, _('Spread this'), :action => 'publish_on_portal_community', :id => article.id
-    end
+  def display_spread_button(article)
+    expirable_button article, :spread, _('Spread this'), {:action => 'publish', :id => article.id}, {:class => 'colorbox'}
   end
 
   def display_delete_button(article)

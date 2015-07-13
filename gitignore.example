@@ -1,3 +1,4 @@
+Gemfile.lock
 .gitignore
 .rbenv-*
 .vagrant
@@ -24,7 +25,6 @@ public/designs/themes/*
 public/designs/icons/default
 
 public/assets
-
 .sass-cache
 public/javascripts/cache*
 public/stylesheets/cache*
@@ -39,6 +39,7 @@ tags
 pkg
 *~
 *.swp
+*.swo
 debian/*.log
 debian/*.substvars
 debian/*.debhelper
@@ -46,7 +47,7 @@ debian/files
 debian/noosfero/
 debian/noosfero-apache/
 features/plugins/*
-plugins/solr/config/solr.yml
+config/solr.yml
 /solr
 
 plugins/fb_app/config.yml

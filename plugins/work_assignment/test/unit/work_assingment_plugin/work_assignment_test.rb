@@ -1,4 +1,4 @@
-require "test_helper"
+require 'test_helper'
 
 class WorkAssignmentTest < ActiveSupport::TestCase
   should 'find or create sub-folder based on author identifier' do

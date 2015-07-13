@@ -9,7 +9,7 @@ class OrdersPluginAdminController < MyProfileController
   before_filter :set_admin
 
   helper OrdersPlugin::TranslationHelper
-  helper OrdersPlugin::OrdersDisplayHelper
+  helper OrdersPlugin::DisplayHelper
 
   def index
     @purchases_month = profile.purchases.latest.first.created_at.month rescue Date.today.month
@@ -26,12 +26,16 @@ class OrdersPluginAdminController < MyProfileController
     raise unless self.filter_methods.include? @method
 
     @actor_name = params[:actor_name].to_sym
+    params[:page] = 1 if params[:page].blank?
 
     @scope ||= profile
     @scope = @scope.send @method
-    @orders = hmvc_orders_context::Order.search_scope @scope, params
+    @orders = hmvc_orders_context::Order.search_scope(@scope, params).paginate(per_page: 30, page: params[:page])
 
-    render layout: false
+    respond_to do |format|
+      format.html{ render partial: 'orders_plugin_admin/results', locals: { orders: @orders, actor_name: @actor_name} }
+      format.js{ render template: 'orders_plugin_admin/filter' }
+    end
   end
 
   def edit
@@ -85,7 +89,7 @@ class OrdersPluginAdminController < MyProfileController
     @admin = true
   end
 
-  extend ControllerInheritance::ClassMethods
+  extend HMVC::ClassMethods
   hmvc OrdersPlugin, orders_context: OrdersPlugin
 
 end

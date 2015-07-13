@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative '../test_helper'
 class DisplayContentBlockTest < ActiveSupport::TestCase
 
   INVALID_KIND_OF_ARTICLE = [EnterpriseHomepage, Event, RssFeed, UploadedFile, Gallery]
@@ -646,6 +646,69 @@ class DisplayContentBlockTest < ActiveSupport::TestCase
     block.checked_nodes= checked_articles
     a1.destroy
     assert_equal [], block.parent_nodes
+  end
+
+  should 'show articles in recent order' do
+    profile = create_user('testuser').person
+    Article.delete_all
+    a1 = fast_create(TextileArticle, :name => 'test article 1', :profile_id => profile.id, :published_at => DateTime.current)
+    a2 = fast_create(TextileArticle, :name => 'test article 2', :profile_id => profile.id, :published_at => (DateTime.current + 1))
+
+    block = DisplayContentBlock.new
+    block.sections = [{:value => 'title', :checked => true}]
+    block.nodes = [a1.id, a2.id]
+    box = mock()
+    block.stubs(:box).returns(box)
+    box.stubs(:owner).returns(profile)
+
+    block.order_by_recent = true
+
+    a1_index = instance_eval(&block.content).index(a1.name)
+    a2_index = instance_eval(&block.content).index(a2.name)
+
+    assert a2_index < a1_index
+  end
+
+  should 'show articles in oldest order' do
+    profile = create_user('testuser').person
+    Article.delete_all
+    a1 = fast_create(TextileArticle, :name => 'test article 1', :profile_id => profile.id, :published_at => DateTime.current)
+    a2 = fast_create(TextileArticle, :name => 'test article 2', :profile_id => profile.id, :published_at => (DateTime.current + 1))
+
+    block = DisplayContentBlock.new
+    block.sections = [{:value => 'title', :checked => true}]
+    block.nodes = [a1.id, a2.id]
+    box = mock()
+    block.stubs(:box).returns(box)
+    box.stubs(:owner).returns(profile)
+
+    block.order_by_recent = false
+
+    a1_index = instance_eval(&block.content).index(a1.name)
+    a2_index = instance_eval(&block.content).index(a2.name)
+
+    assert a1_index < a2_index
+  end
+
+  should 'show articles in recent order with limit option' do
+    profile = create_user('testuser').person
+    Article.delete_all
+    a1 = fast_create(TextileArticle, :name => 'test article 1', :profile_id => profile.id, :published_at => DateTime.current)
+    a2 = fast_create(TextileArticle, :name => 'test article 2', :profile_id => profile.id, :published_at => (DateTime.current + 1))
+
+    block = DisplayContentBlock.new
+    block.sections = [{:value => 'title', :checked => true}]
+    block.display_folder_children = true
+    box = mock()
+    block.stubs(:box).returns(box)
+    box.stubs(:owner).returns(profile)
+
+    block.order_by_recent = true
+    block.limit_to_show = 1
+
+    a1_index = instance_eval(&block.content).index(a1.name)
+
+    assert a1_index.nil?
   end
 
 end

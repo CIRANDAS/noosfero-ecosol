@@ -1,9 +1,5 @@
-require File.dirname(__FILE__) + '/../test_helper'
-require File.dirname(__FILE__) + '/../../controllers/people_block_plugin_profile_controller'
-
-
-# Re-raise errors caught by the controller.
-class PeopleBlockPluginProfileController; def rescue_action(e) raise e end; end
+require_relative '../test_helper'
+require_relative '../../controllers/people_block_plugin_profile_controller'
 
 class PeopleBlockPluginProfileControllerTest < ActionController::TestCase
 

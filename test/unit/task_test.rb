@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class TaskTest < ActiveSupport::TestCase
 
@@ -131,7 +131,7 @@ class TaskTest < ActiveSupport::TestCase
 
     task.cancel
 
-    assert_nil Task.find_by_code(task.code)
+    assert_equal [], Task.from_code(task.code)
   end
 
   should 'be able to find active tasks' do
@@ -139,7 +139,7 @@ class TaskTest < ActiveSupport::TestCase
     task.requestor = sample_user
     task.save!
 
-    assert_not_nil Task.find_by_code(task.code)
+    assert_not_nil Task.from_code(task.code)
   end
 
   should 'use 36-chars codes by default' do
@@ -430,6 +430,28 @@ class TaskTest < ActiveSupport::TestCase
     t1.ham!
     t1.reload
     assert t1.ham?
+  end
+
+  should 'be able to assign a responsible to a task' do
+    person = fast_create(Person)
+    task = fast_create(Task)
+    task.responsible = person
+    task.save!
+    assert_equal person, task.responsible
+  end
+
+  should 'store who finish the task' do
+    t = Task.create
+    person = fast_create(Person)
+    t.finish(person)
+    assert_equal person, t.reload.closed_by
+  end
+
+  should 'store who cancel the task' do
+    t = Task.create
+    person = fast_create(Person)
+    t.cancel(person)
+    assert_equal person, t.reload.closed_by
   end
 
   protected

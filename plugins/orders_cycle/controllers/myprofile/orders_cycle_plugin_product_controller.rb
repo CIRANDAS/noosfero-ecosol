@@ -7,7 +7,7 @@ class OrdersCyclePluginProductController < SuppliersPluginProductController
   include OrdersCyclePlugin::TranslationHelper
 
   helper OrdersCyclePlugin::TranslationHelper
-  helper OrdersCyclePlugin::OrdersCycleDisplayHelper
+  helper OrdersCyclePlugin::DisplayHelper
 
   def edit
     super
@@ -40,7 +40,7 @@ class OrdersCyclePluginProductController < SuppliersPluginProductController
 
   protected
 
-  extend ControllerInheritance::ClassMethods
+  extend HMVC::ClassMethods
   hmvc OrdersCyclePlugin, orders_context: OrdersCyclePlugin
 
 end

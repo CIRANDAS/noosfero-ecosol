@@ -20,8 +20,8 @@ module NavigationHelpers
     when /^\//
       page_name
 
-    when /^(.*)'s profile/
-      '/profile/' + profile_identifier($1)
+    when /the welcome page/
+      '/site/welcome'
 
     when /article "([^"]+)"\s*$/
       url_for(Article.find_by_name($1).url.merge({:only_path => true}))
@@ -40,7 +40,7 @@ module NavigationHelpers
       "/myprofile/#{$2}/profile_design/edit/#{block.id}"
 
     when /^(.*)'s homepage$/
-      '/' + profile_identifier($1) + '/'
+      '/' + profile_identifier($1)
 
     when /^(.*)'s blog$/
       '/%s/blog' % profile_identifier($1)

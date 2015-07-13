@@ -1,8 +1,5 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 require 'my_profile_controller'
-
-# Re-raise errors caught by the controller.
-class MyProfileController; def rescue_action(e) raise e end; end
 
 class OnlyForPersonTestController < MyProfileController
   requires_profile_class Person

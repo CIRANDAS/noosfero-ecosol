@@ -1,11 +1,18 @@
 class OrdersPlugin::Order < ActiveRecord::Base
 
-  Statuses = %w[ordered accepted separated delivered received]
-  DbStatuses = %w[draft planned cancelled] + Statuses
-  UserStatuses = %w[open forgotten planned cancelled] + Statuses
-  StatusText = {}; UserStatuses.map do |status|
-    StatusText[status] = "orders_plugin.models.order.statuses.#{status}"
-  end
+  Statuses = ::OrdersPlugin::Item::Statuses
+  DbStatuses = ::OrdersPlugin::Item::DbStatuses
+  UserStatuses = ::OrdersPlugin::Item::UserStatuses
+  StatusText = ::OrdersPlugin::Item::StatusText
+
+  # oh, we need a payments plugin!
+  PaymentMethods = {
+    money: proc{ _'Money' },
+    check: proc{ _'shopping_cart|Check' },
+    credit_card: proc{ _'Credit card' },
+    bank_transfer: proc{ _'Bank transfer' },
+    boleto: proc{ _'Boleto' },
+  }
 
   # remember to translate on changes
   ActorData = [
@@ -15,15 +22,15 @@ class OrdersPlugin::Order < ActiveRecord::Base
     :name, :description,
     :address_line1, :address_line2, :reference,
     :district, :city, :state,
-    :postal_code,
+    :postal_code, :zip_code,
   ]
   PaymentData = [
     :method, :change,
   ]
 
   # copy, for easiness. can't be declared to here to avoid cyclic reference
-  StatusDataMap = OrdersPlugin::Item::StatusDataMap
-  StatusAccessMap = OrdersPlugin::Item::StatusAccessMap
+  StatusDataMap = ::OrdersPlugin::Item::StatusDataMap
+  StatusAccessMap = ::OrdersPlugin::Item::StatusAccessMap
 
   StatusesByActor = {
     consumer: StatusAccessMap.map{ |s, a| s if a == :consumer }.compact,
@@ -34,9 +41,12 @@ class OrdersPlugin::Order < ActiveRecord::Base
   self.table_name = :orders_plugin_orders
   self.abstract_class = true
 
-  attr_accessible :status, :consumer, :profile, :supplier_delivery_id, :consumer_delivery_id
+  attr_accessible :status, :consumer, :profile,
+    :supplier_delivery_id, :consumer_delivery_id, :supplier_delivery_data, :consumer_delivery_data
 
   belongs_to :profile
+  # may be override by subclasses
+  belongs_to :supplier, foreign_key: :profile_id, class_name: 'Profile'
   belongs_to :consumer, class_name: 'Profile'
 
   belongs_to :session, primary_key: :session_id, foreign_key: :session_id, class_name: 'ActiveRecord::SessionStore::Session'
@@ -46,6 +56,10 @@ class OrdersPlugin::Order < ActiveRecord::Base
 
   belongs_to :supplier_delivery, class_name: 'DeliveryPlugin::Method'
   belongs_to :consumer_delivery, class_name: 'DeliveryPlugin::Method'
+
+  scope :alphabetical, -> { joins(:consumer).order 'profiles.name ASC' }
+  scope :latest, -> { order 'code ASC' }
+  scope :default_order, -> { order 'code DESC' }
 
   scope :of_session, -> session_id { where session_id: session_id }
   scope :of_user, -> session_id, consumer_id=nil do
@@ -78,24 +92,29 @@ class OrdersPlugin::Order < ActiveRecord::Base
   scope :months, select: 'DISTINCT(EXTRACT(months FROM orders_plugin_orders.created_at)) as month', order: 'month DESC'
   scope :years, select: 'DISTINCT(EXTRACT(YEAR FROM orders_plugin_orders.created_at)) as year', order: 'year DESC'
 
-  scope :by_month, lambda { |month| {
-    conditions: [ 'EXTRACT(month FROM orders_plugin_orders.created_at) <= :month AND EXTRACT(month FROM orders_plugin_orders.created_at) >= :month', { month: month } ]}
+  scope :by_month, lambda { |month|
+    where 'EXTRACT(month FROM orders_plugin_orders.created_at) <= :month AND EXTRACT(month FROM orders_plugin_orders.created_at) >= :month',{ month: month }
   }
-  scope :by_year, lambda { |year| {
-    conditions: [ 'EXTRACT(year FROM orders_plugin_orders.created_at) <= :year AND EXTRACT(year FROM orders_plugin_orders.created_at) >= :year', { year: year } ]}
+  scope :by_year, lambda { |year|
+    where 'EXTRACT(year FROM orders_plugin_orders.created_at) <= :year AND EXTRACT(year FROM orders_plugin_orders.created_at) >= :year', { year: year }
+  }
+  scope :by_range, lambda { |start_time, end_time|
+    where 'orders_plugin_orders.created_at >= :start AND orders_plugin_orders.created_at <= :end', { start: start_time, end: end_time }
   }
 
   scope :with_status, lambda { |status|
-    {conditions: {status: status}}
+    where status: status
   }
   scope :with_code, lambda { |code|
-    {conditions: {code: code}}
+    where code: code
   }
 
   validates_presence_of :profile
+  # consumer is optional, as orders can be made by unlogged users
   validates_inclusion_of :status, in: DbStatuses
 
   before_validation :check_status
+  before_validation :change_status
   after_save :send_notifications
 
   extend CodeNumbering::ClassMethods
@@ -105,15 +124,20 @@ class OrdersPlugin::Order < ActiveRecord::Base
 
   extend SerializedSyncedData::ClassMethods
   sync_serialized_field :profile do |profile|
-    {name: profile.name, email: profile.contact_email}
+    {name: profile.name, email: profile.contact_email, contact_phone: profile.contact_phone} if profile
   end
   sync_serialized_field :consumer do |consumer|
-    if consumer.blank? then {} else
-      {name: consumer.name, email: consumer.contact_email, contact_phone: consumer.contact_phone}
-    end
+    {name: consumer.name, email: consumer.contact_email, contact_phone: consumer.contact_phone} if consumer
   end
   sync_serialized_field :supplier_delivery
-  sync_serialized_field :consumer_delivery
+  sync_serialized_field :consumer_delivery do |consumer_delivery_data|
+    if self.consumer
+      h = {}; Profile::LOCATION_FIELDS.each do |field|
+        h[field.to_sym] = self.consumer.send(field)
+      end
+      h
+    end
+  end
   serialize :payment_data, Hash
 
   # Aliases needed for terms use
@@ -125,8 +149,9 @@ class OrdersPlugin::Order < ActiveRecord::Base
     scope = scope.for_consumer_id params[:consumer_id] if params[:consumer_id].present?
     scope = scope.for_profile_id params[:supplier_id] if params[:supplier_id].present?
     scope = scope.with_code params[:code] if params[:code].present?
-    scope = scope.by_month params[:date][:month] if params[:date][:month].present? rescue nil
-    scope = scope.by_year params[:date][:year] if params[:date][:year].present? rescue nil
+    scope = scope.by_range params[:start_time], params[:end_time] if params[:start_time].present?
+    scope = scope.where supplier_delivery_id: params[:delivery_method_id] if params[:delivery_method_id].present?
+    scope = scope.default_order
     scope
   end
 
@@ -156,47 +181,70 @@ class OrdersPlugin::Order < ActiveRecord::Base
           sp = source_sp.from_product
           supplier = source_sp.supplier
 
-          # if it's not yet defined, define it and sum the quantity from aggregated product/product * quantity ordered
           products_by_supplier[supplier] ||= Set.new
           products_by_supplier[supplier] << sp
           sp.quantity_ordered ||= 0
-          sp.quantity_ordered += item.quantity_consumer_ordered * source_sp.quantity
+          sp.quantity_ordered += item.status_quantity * source_sp.quantity
         end
       else
+        # the case where cycles and offered products are not involved, so item is linked directly to a Product
         sp = item.product
         supplier = item.order.profile.self_supplier
 
         products_by_supplier[supplier] ||= Set.new
         products_by_supplier[supplier] << sp
         sp.quantity_ordered ||= 0
-        sp.quantity_ordered += item.quantity_consumer_ordered
+        sp.quantity_ordered += item.status_quantity
       end
     end
 
     products_by_supplier
   end
 
+  # define on subclasses
   def orders_name
     raise 'undefined'
   end
 
+  # override on subclasses
   def delivery_methods
     self.profile.delivery_methods
   end
 
+  # override on subclasses
+  def available_products
+    self.profile.products
+  end
+
   def actor_data actor_name
-    data = self.send("#{actor_name}_data").select do |k,v|
-      OrdersPlugin::Order::ActorData.include? k and v.present?
-    end rescue {}
-    data = Hash[data]
+    data = {}; self.send("#{actor_name}_data").each do |k, v|
+      data[k] = v if OrdersPlugin::Order::ActorData.include? k and v.present?
+    end
     data = {} if data.size == 1 and data[:name].present?
     data
   end
 
-  def delivery_data actor_name
-    self.send("#{actor_name}_delivery_data").select do |k,v|
-      OrdersPlugin::Order::DeliveryData.include? k and v.present?
-    end rescue {}
+  def actor_delivery_data actor_name
+    data = {}; self.send("#{actor_name}_delivery_data").each do |k, v|
+      data[k] = v if OrdersPlugin::Order::DeliveryData.include? k and v.present?
+    end
+    data
+  end
+
+  def delivery_data actor_name=nil
+    return actor_delivery_data actor_name if actor_name
+
+    supplier_data = actor_delivery_data :supplier
+    case self.supplier_delivery_data[:delivery_type]
+    when 'delivery'
+      consumer_data = actor_delivery_data :consumer
+      data = consumer_data.dup
+      data[:name] = supplier_data[:name]
+      data[:description] = supplier_data[:description]
+    when 'pickup'
+      data = supplier_data.dup
+    end
+    data
   end
 
   # All products from the order profile?
@@ -242,10 +290,12 @@ class OrdersPlugin::Order < ActiveRecord::Base
   end
 
   def next_status actor_name
+    # allow supplier to confirm and receive orders if admin is true
+    actor_statuses = if actor_name == :supplier then Statuses else StatusesByActor[actor_name] end
     # if no status was found go to the first (-1 to 0)
     current_index = Statuses.index(self.status) || -1
     next_status = Statuses[current_index + 1]
-    next_status if StatusesByActor[actor_name].index next_status rescue false
+    next_status if actor_statuses.index next_status rescue false
   end
 
   def step actor_name
@@ -253,7 +303,8 @@ class OrdersPlugin::Order < ActiveRecord::Base
     self.status = new_status if new_status
   end
   def step! actor_name
-    self.save! if self.step actor_name
+    # don't crash on errors as some suppliers may have been deleted and this order may not be valid anymore
+    self.save if self.step actor_name
   end
 
   def situation
@@ -273,7 +324,7 @@ class OrdersPlugin::Order < ActiveRecord::Base
 
   # cache is done independent of user as model cache is per request
   def may_edit? user, admin_action = false
-    @may_edit ||= (admin_action and self.profile.admins.include?(user)) or (self.open? and self.consumer == user and self.profile.members.include? user)
+    @may_edit ||= (admin_action and user.in? self.profile.admins) or (self.open? and self.consumer == user and user.in? self.profile.members) rescue false
   end
 
   def verify_actor? profile, actor_name
@@ -305,22 +356,29 @@ class OrdersPlugin::Order < ActiveRecord::Base
   instance_exec &OrdersPlugin::Item::DefineTotals
 
   # total_price considering last state
-  def total_price actor_name, admin = false
-    if not self.pre_order? and admin and status = self.next_status(actor_name)
-      self.fill_items_data self.status, status
+  def total_price actor_name = :consumer, admin = false
+    # for admins, we want the next_status while we concluded the finish status change
+    if admin
+      price = :status_price
     else
-      status = self.status
+      data = StatusDataMap[self.status] || StatusDataMap[Statuses.first]
+      price = "price_#{data}".to_sym
     end
-
-    data = StatusDataMap[status] || StatusDataMap[Statuses.first]
-    price = "price_#{data}".to_sym
 
     items ||= (self.ordered_items rescue nil) || self.items
     items.collect(&price).inject(0){ |sum, p| sum + p.to_f }
   end
   has_currency :total_price
 
-  def fill_items_data from_status, to_status, save = false
+  def total actor_name = :consumer, admin = false
+    t = self.total_price actor_name, admin
+    t += self.supplier_delivery.cost t if self.supplier_delivery.present?
+    t
+  end
+  has_currency :total
+
+  def fill_items from_status, to_status, save = false
+    # check for status advance
     return if (Statuses.index(to_status) <= Statuses.index(from_status) rescue true)
 
     from_data = StatusDataMap[from_status]
@@ -346,16 +404,22 @@ class OrdersPlugin::Order < ActiveRecord::Base
     self.status ||= 'draft'
     # backwards compatibility
     self.status = 'ordered' if self.status == 'confirmed'
+  end
 
-    self.fill_items_data self.status_was, self.status, true
-    self.sync_serialized_data if self.status_changed?
+  def change_status
+    return if self.status_was == self.status
 
+    self.fill_items self.status_was, self.status, true
+    self.items.update_all status: self.status
+    self.building_next_status = false
+
+    # fill dates on status advance
     if self.status_on? 'ordered'
       Statuses.each do |status|
         self.send "#{self.status}_at=", Time.now if self.status_was != status and self.status == status
       end
     else
-      # for draft, planned, forgotten, cancelled, etc
+      # status rewind for draft, planned, forgotten, cancelled, etc
       Statuses.each do |status|
         self.send "#{status}_at=", nil
       end
@@ -367,8 +431,6 @@ class OrdersPlugin::Order < ActiveRecord::Base
     return if source == 'shopping_cart_plugin'
     # ignore when status is being rewinded
     return if (Statuses.index(self.status) <= Statuses.index(self.status_was) rescue false)
-    # dummy suppliers don't notify
-    return unless self.profile.visible
 
     if self.status == 'ordered' and self.status_was != 'ordered'
       OrdersPlugin::Mailer.order_confirmation(self).deliver

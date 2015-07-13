@@ -94,8 +94,8 @@ Given /^the following blocks$/ do |table|
       owner.boxes<< Box.new
       owner.boxes.first.blocks << MainBlock.new
     end
-    box_id = owner.boxes.last.id
-    klass.constantize.create!(item.merge(:box_id => box_id))
+    box = owner.boxes.first
+    klass.constantize.create!(item.merge(:box => box))
   end
 end
 
@@ -286,13 +286,14 @@ Given /^the following price details?$/ do |table|
 end
 
 Given /^I am logged in as "(.+)"$/ do |username|
-  Given %{I go to logout page}
-  And %{I go to login page}
-  And %{I fill in "main_user_login" with "#{username}"}
-  And %{I fill in "user_password" with "123456"}
-  When %{I press "Log in"}
-  And %{I go to #{username}'s control panel}
-  Then %{I should be on #{username}'s control panel}
+  step %{I go to logout page}
+  step %{I go to login page}
+  step %{I fill in "main_user_login" with "#{username}"}
+  step %{I fill in "user_password" with "123456"}
+  step %{I press "Log in"}
+  step %{I go to #{username}'s control panel}
+  step %{I should be on #{username}'s control panel}
+  @current_user = username
 end
 
 Given /^"([^"]*)" is environment admin$/ do |person|
@@ -330,8 +331,9 @@ Given /^organization_approval_method is "(.+)" on environment$/ do |approval_met
   e.save
 end
 
-Given /^"(.+)" is a member of "(.+)"$/ do |person,profile|
-  Profile.find_by_name(profile).add_member(Profile.find_by_name(person))
+Given /^"(.+)" is a member of "(.+)"$/ do |person, profile|
+  person, profile = Profile.where(name: person).first, Profile.where(name: profile).first
+  profile.affiliate person, Profile::Roles.member(profile.environment.id)
 end
 
 Then /^"(.+)" should be a member of "(.+)"$/ do |person,profile|
@@ -433,20 +435,13 @@ Given /^the mailbox is empty$/ do
 end
 
 Given /^the (.+) mail (?:is|has) (.+) (.+)$/ do |position, field, value|
-  if(/^[0-9]+$/ =~ position)
-    ActionMailer::Base.deliveries[position.to_i][field].to_s == value
-  else
-    ActionMailer::Base.deliveries.send(position)[field].to_s == value
-  end
+  mail = if /^[0-9]+$/ =~ position then ActionMailer::Base.deliveries[position.to_i] else ActionMailer::Base.deliveries.send position end
+  mail and mail[field].to_s == value
 end
 
 Given /^the (.+) mail (.+) is like (.+)$/ do |position, field, regexp|
-  re = Regexp.new(regexp)
-  if(/^[0-9]+$/ =~ position)
-    re =~ ActionMailer::Base.deliveries[position.to_i][field.to_sym]
-  else
-    re =~ ActionMailer::Base.deliveries.send(position)[field.to_sym]
-  end
+  mail = if /^[0-9]+$/ =~ position then ActionMailer::Base.deliveries[position.to_i] else ActionMailer::Base.deliveries.send position end
+  mail and Regexp.new(regexp) =~ mail[field.to_sym]
 end
 
 Given /^the following environment configuration$/ do |table|
@@ -458,13 +453,13 @@ Given /^the following environment configuration$/ do |table|
 end
 
 Then /^I should be logged in as "(.+)"$/ do |username|
-   When %{I go to #{username}'s control panel}
-   Then %{I should be on #{username}'s control panel}
+   step %{I go to #{username}'s control panel}
+   step %{I should be on #{username}'s control panel}
 end
 
 Then /^I should not be logged in as "(.+)"$/ do |username|
-   When %{I go to #{username}'s control panel}
-   Then %{I should be on login page}
+   step %{I go to #{username}'s control panel}
+   step %{I should be on login page}
 end
 
 Given /^the profile "(.+)" has no blocks$/ do |profile|
@@ -636,9 +631,9 @@ Given /^the following tags$/ do |table|
 end
 
 When /^I search ([^\"]*) for "([^\"]*)"$/ do |asset, query|
-  When %{I go to the search #{asset} page}
-  And %{I fill in "search-input" with "#{query}"}
-  And %{I press "Search"}
+  step %{I go to the search #{asset} page}
+  step %{I fill in "search-input" with "#{query}"}
+  step %{I press "Search"}
 end
 
 Then /^I should see ([^\"]*)'s product image$/ do |product_name|
@@ -740,6 +735,8 @@ Given /^the environment is configured to (.*) after signup$/ do |option|
       'user_homepage'
     when 'redirect to profile control panel'
       'user_control_panel'
+    when 'redirect to welcome page'
+      'welcome_page'
   end
   environment = Environment.default
   environment.redirection_after_signup = redirection

@@ -1,6 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
-
-class EnvironmentThemesController; def rescue_action(e) raise e end; end
+require_relative "../test_helper"
 
 class EnvironmentThemesControllerTest < ActionController::TestCase
 

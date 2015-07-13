@@ -12,14 +12,14 @@ class Event < Article
   settings_items :address, :type => :string
 
   def link=(value)
-    self.setting[:link] = maybe_add_http(value)
+    self.setting[:link] = maybe_add_http(URI.escape value.to_s)
   end
 
   def link
     maybe_add_http(self.setting[:link])
   end
 
-  xss_terminate :only => [ :body, :link, :address ], :with => 'white_list', :on => 'validation'
+  xss_terminate :only => [ :name, :body, :address ], :with => 'white_list', :on => 'validation'
 
   def initialize(*args)
     super(*args)
@@ -34,23 +34,20 @@ class Event < Article
     end
   end
 
-  scope :by_day, lambda { |date|
-    { :conditions => ['start_date = :date AND end_date IS NULL OR (start_date <= :date AND end_date >= :date)', {:date => date}],
-      :order => 'start_date ASC'
-    }
+  scope :by_day, -> (date) {
+    order('start_date ASC')
+    .where('start_date = :date AND end_date IS NULL OR (start_date <= :date AND end_date >= :date)', {:date => date})
   }
 
-  scope :next_events_from_month, lambda { |date|
+  scope :next_events_from_month, -> (date) {
     date_temp = date.strftime("%Y-%m-%d")
-    { :conditions => ["start_date >= ?","#{date_temp}"],
-      :order => 'start_date ASC'
-    }
+    order('start_date ASC')
+    .where("start_date >= ?","#{date_temp}")
   }
 
-  scope :by_month, lambda { |date|
-    { :conditions => ["EXTRACT(YEAR FROM start_date) = ? AND EXTRACT(MONTH FROM start_date) = ?",date.year,date.month],
-      :order => 'start_date ASC'
-    }
+  scope :by_month, -> (date) {
+    order('start_date ASC')
+    .where("EXTRACT(YEAR FROM start_date) = ? AND EXTRACT(MONTH FROM start_date) = ?", date.year, date.month)
   }
 
   include WhiteListFilter
@@ -71,12 +68,10 @@ class Event < Article
     'event'
   end
 
-  scope :by_range, lambda { |range| {
-    :conditions => [
-      'start_date BETWEEN :start_day AND :end_day OR end_date BETWEEN :start_day AND :end_day',
-      { :start_day => range.first, :end_day => range.last }
-    ]
-  }}
+  scope :by_range, -> (range) {
+    where('start_date BETWEEN :start_day AND :end_day OR end_date BETWEEN :start_day AND :end_day',
+      {:start_day => range.first, :end_day => range.last})
+  }
 
   def self.date_range(year, month)
     if year.nil? || month.nil?
@@ -98,54 +93,28 @@ class Event < Article
     start_date..(end_date||start_date)
   end
 
+  def first_paragraph
+    paragraphs = Nokogiri::HTML.fragment(self.body).css('p')
+    paragraphs.empty? ? '' : paragraphs.first.to_html
+  end
+
   def to_html(options = {})
     event = self
-    lambda do
-      extend DatesHelper
+    format = options[:format]
 
-      result = ''
-      html = ::Builder::XmlMarkup.new(:target => result)
-
-      html.div(:class => 'event-info' ) {
-        html.ul(:class => 'event-data' ) {
-          html.li(:class => 'event-dates' ) {
-            html.span _('When:')
-            html.text! show_period(event.start_date, event.end_date)
-          } if event.start_date.present? || event.end_date.present?
-          html.li {
-            html.span _('URL:')
-            html.a(event.link || "", 'href' => event.link || "")
-          } if event.link.present?
-          html.li {
-            html.span _('Address:')
-            html.text! event.address || ""
-          } if event.address.present?
-        }
-
-        # TODO: some good soul, please clean this ugly hack:
-        if event.body
-          html.div('_____XXXX_DESCRIPTION_GOES_HERE_XXXX_____', :class => 'event-description')
-        end
-      }
-
-      if event.body
-        if options[:format] == 'short'
-          result.sub!('_____XXXX_DESCRIPTION_GOES_HERE_XXXX_____', display_short_format(event))
-        else
-          result.sub!('_____XXXX_DESCRIPTION_GOES_HERE_XXXX_____', event.body)
-        end
-      end
-
-      result
+    proc do
+      render :file => 'content_viewer/event_page', :locals => { :event => event,
+        :format => format }
     end
   end
 
+  def duration
+    ((self.end_date || self.start_date) - self.start_date).to_i
+  end
+
+  alias_method :article_lead, :lead
   def lead
-    event = self
-    lambda do
-      content_tag('div', show_period(event.start_date, event.end_date), class: 'event-dates') +
-        (event.abstract.blank? ? event.automatic_abstract : event.abstract).to_s.html_safe
-    end
+    self.class.action_view.render 'content_viewer/event_lead', event: self
   end
 
   def event?

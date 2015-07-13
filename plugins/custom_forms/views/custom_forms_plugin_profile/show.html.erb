@@ -14,17 +14,17 @@
 
   <%= form_for :submission do |f| %>
     <% if !user %>
-      <%= required labelled_form_field _('Author name'), text_field_tag(:author_name, @submission.author_name) %>
-      <%= required labelled_form_field _('Author email'), text_field_tag(:author_email, @submission.author_email) %>
+      <%= required labelled_form_field _('Name'), text_field_tag(:author_name, @submission.author_name) %>
+      <%= required labelled_form_field _('Email'), text_field_tag(:author_email, @submission.author_email) %>
     <% end %>
 
     <%= render :partial => 'shared/form_submission', :locals => {:f => f} %>
 
     <% button_bar do %>
       <% if @form.expired? %>
-        <%= submit_button :save, _('Save'), :disabled => '', :class => 'disabled', :cancel => {:controller => :profile, :profile => profile.identifier} %>
+        <%= submit_button :save, c_('Save'), :disabled => '', :class => 'disabled', :cancel => {:controller => :profile, :profile => profile.identifier} %>
       <% else %>
-        <%= submit_button :save, _('Save'), :cancel => {:controller => :profile, :profile => profile.identifier} %>
+        <%= submit_button :save, c_('Save'), :cancel => {:controller => :profile, :profile => profile.identifier} %>
       <% end %>
     <% end %>
 

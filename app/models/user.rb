@@ -19,6 +19,10 @@ class User < ActiveRecord::Base
     Thread.current[:current_user] = user
   end
 
+  SEARCHABLE_FIELDS = {
+    :email => {:label => _('Email'), :weight => 5},
+  }
+
   def self.[](login)
     self.find_by_login(login)
   end
@@ -49,7 +53,7 @@ class User < ActiveRecord::Base
       p = Person.new
 
       p.attributes = user.person_data
-      p.identifier = user.login
+      p.identifier = user.login if p.identifier.blank?
       p.user = user
       p.environment = user.environment
       p.name ||= user.name || user.login
@@ -71,7 +75,8 @@ class User < ActiveRecord::Base
 
   attr_writer :person_data
   def person_data
-    @person_data || {}
+    @person_data = {} if @person_data.nil?
+    @person_data
   end
 
   def email_domain
@@ -88,8 +93,13 @@ class User < ActiveRecord::Base
     end
   end
 
-  has_one :person, :dependent => :destroy
+  # set autosave to false as we do manually when needed and Person syncs with us
+  has_one :person, dependent: :destroy, autosave: false
   belongs_to :environment
+
+  has_many :sessions, dependent: :destroy
+  # holds the current session, see lib/authenticated_system.rb
+  attr_accessor :session
 
   attr_protected :activated_at
 
@@ -106,7 +116,7 @@ class User < ActiveRecord::Base
   validates_length_of       :email,    :within => 3..100, :if => (lambda {|user| !user.email.blank?})
   validates_uniqueness_of   :login, :email, :case_sensitive => false, :scope => :environment_id
   before_save :encrypt_password
-  before_save :normalize_email
+  before_save :normalize_email, if: proc{ |u| u.email.present? }
   validates_format_of :email, :with => Noosfero::Constants::EMAIL_FORMAT, :if => (lambda {|user| !user.email.blank?})
 
   validates_inclusion_of :terms_accepted, :in => [ '1' ], :if => lambda { |u| ! u.terms_of_use.blank? }, :message => N_('{fn} must be checked in order to signup.').fix_i18n
@@ -114,8 +124,8 @@ class User < ActiveRecord::Base
   # Authenticates a user by their login name or email and unencrypted password.  Returns the user or nil.
   def self.authenticate(login, password, environment = nil)
     environment ||= Environment.default
-    u = self.first :conditions => ['(login = ? OR email = ?) AND environment_id = ? AND activated_at IS NOT NULL',
-                                   login, login, environment.id] # need to get the salt
+    u = self.where('(login = ? OR email = ?) AND environment_id = ? AND activated_at IS NOT NULL',
+                   login, login, environment.id).first # need to get the salt
     u && u.authenticated?(password) ? u : nil
   end
 
@@ -163,6 +173,7 @@ class User < ActiveRecord::Base
     @task.name = self.name
     @task.email = self.email
     @task.target = self.environment
+    @task.requestor = self.person
     @task.save
   end
 
@@ -281,12 +292,12 @@ class User < ActiveRecord::Base
   end
 
   def name
-    name = (self[:name] || login)
+    name = (@name || login)
     person.nil? ? name : (person.name || name)
   end
 
   def name= name
-    self[:name] = name
+    @name = name
   end
 
   def enable_email!
@@ -303,6 +314,10 @@ class User < ActiveRecord::Base
     else
       return EmailActivation.exists?(:requestor_id => self.person.id, :target_id => self.environment.id, :status => Task::Status::ACTIVE)
     end
+  end
+
+  def moderate_registration_pending?
+    return ModerateUserRegistration.exists?(:requestor_id => self.person.id, :target_id => self.environment.id, :status => Task::Status::ACTIVE)
   end
 
   def data_hash(gravatar_default = nil)
@@ -375,6 +390,6 @@ class User < ActiveRecord::Base
 
     def delay_activation_check
       return if person.is_template?
-      Delayed::Job.enqueue(UserActivationJob.new(self.id), {:priority => 0, :run_at => 72.hours.from_now})
+      Delayed::Job.enqueue(UserActivationJob.new(self.id), {:priority => 0, :run_at => (NOOSFERO_CONF['hours_until_user_activation_check'] || 72).hours.from_now})
     end
 end

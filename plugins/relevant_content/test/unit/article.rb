@@ -1,8 +1,5 @@
-require File.dirname(__FILE__) + '/../test_helper'
-
+require_relative '../test_helper'
 require 'comment_controller'
-# Re-raise errors caught by the controller.
-class CommentController; def rescue_action(e) raise e end; end
 
 class RelevantContentBlockTest < ActiveSupport::TestCase
 
@@ -20,10 +17,10 @@ class RelevantContentBlockTest < ActiveSupport::TestCase
 
   def enable_vote_plugin
     enabled = false
-    environment=Environment.default
+    environment = Environment.default
     if Noosfero::Plugin.all.include?('VotePlugin')
-      if not environment.enabled_plugins.include?(:vote)
-        environment.enable_plugin(Vote)
+      if not environment.enabled_plugins.include?('VotePlugin')
+        environment.enable_plugin(VotePlugin)
         environment.save!
       end
       enabled = true

@@ -4,11 +4,13 @@ class SearchController < PublicController
   include SearchHelper
   include ActionView::Helpers::NumberHelper
 
-  before_filter :redirect_asset_param, :except => :assets
-  before_filter :load_category
-  before_filter :load_search_assets
-  before_filter :load_query
-  before_filter :load_filter
+  before_filter :redirect_to_environment_domain
+  before_filter :redirect_asset_param, :except => [:assets, :suggestions]
+  before_filter :load_category, :except => :suggestions
+  before_filter :load_search_assets, :except => :suggestions
+  before_filter :load_query, :except => :suggestions
+  before_filter :load_order, :except => :suggestions
+  before_filter :load_templates, :except => :suggestions
 
   # Backwards compatibility with old URLs
   def redirect_asset_param
@@ -20,7 +22,7 @@ class SearchController < PublicController
 
   def index
     @searches = {}
-    @order = []
+    @assets = []
     @names = {}
     @results_only = true
 
@@ -28,7 +30,7 @@ class SearchController < PublicController
       load_query
       @asset = key
       send(key)
-      @order << key
+      @assets << key
       @names[key] = _(description)
     end
     @asset = nil
@@ -42,7 +44,7 @@ class SearchController < PublicController
   # view the summary of one category
   def category_index
     @searches = {}
-    @order = []
+    @assets = []
     @names = {}
     limit = MULTIPLE_SEARCH_LIMIT
     [
@@ -53,7 +55,7 @@ class SearchController < PublicController
       [ :communities, _('Communities'), :recent_communities ],
       [ :articles, _('Contents'), :recent_articles ]
     ].each do |asset, name, filter|
-      @order << asset
+      @assets << asset
       @searches[asset]= {:results => @category.send(filter, limit)}
       raise "No total_entries for: #{asset}" unless @searches[asset][:results].respond_to?(:total_entries)
       @names[asset] = name
@@ -61,14 +63,14 @@ class SearchController < PublicController
   end
 
   def articles
-    @scope = @environment.articles.public.includes(
-      :last_changed_by, :parent, :tags, {:profile => [:domains]}
+    @scope = @environment.articles.is_public.includes(
+      :last_changed_by, :parent, :tags, {profile: [:domains]}
     )
     full_text_search
   end
 
   def contents
-    redirect_to params.merge(:action => :articles)
+    redirect_to url_for(params.merge action: :articles)
   end
 
   def people
@@ -77,7 +79,7 @@ class SearchController < PublicController
   end
 
   def products
-    @scope = @environment.products.includes(
+    @scope = @environment.products.enabled.public.includes(
       :product_category, :unit, :region, :image, {inputs: [:product_category]},
       {product_qualifiers: [:qualifier, :certifier]},
       {price_details: [:production_cost]},
@@ -130,7 +132,7 @@ class SearchController < PublicController
   # keep old URLs workings
   def assets
     params[:action] = params[:asset].is_a?(Array) ? :index : params.delete(:asset)
-    redirect_to params
+    redirect_to url_for(params)
   end
 
   def tags
@@ -151,16 +153,24 @@ class SearchController < PublicController
   def events_by_day
     @date = build_date(params[:year], params[:month], params[:day])
     @events = environment.events.by_day(@date).paginate(:per_page => per_page, :page => params[:page])
-    @title_use_day = params[:day].blank? ? false : true
     render :partial => 'events/events'
+  end
+
+  def suggestions
+    render :text => find_suggestions(normalize_term(params[:term]), environment, params[:asset]).to_json
   end
 
   #######################################################
   protected
 
+  def redirect_to_environment_domain
+    return unless Rails.env.production?
+    redirect_to params.merge host: environment.default_hostname if request.host != environment.default_hostname
+  end
+
   def load_query
     @asset = (params[:asset] || params[:action]).to_sym
-    @order ||= [@asset]
+    @assets ||= [@asset]
     @searches ||= {}
 
     @query = params[:query] || ''
@@ -181,13 +191,22 @@ class SearchController < PublicController
     end
   end
 
+  AVAILABLE_SEARCHES = ActiveSupport::OrderedHash[
+    :articles, _('Contents'),
+    :people, _('People'),
+    :communities, _('Communities'),
+    :enterprises, _('Enterprises'),
+    :products, _('Products and Services'),
+    :events, _('Events'),
+  ]
+
   def load_search_assets
-    if SEARCHES.keys.include?(params[:action].to_sym) && environment.enabled?("disable_asset_#{params[:action]}")
+    if AVAILABLE_SEARCHES.keys.include?(params[:action].to_sym) && environment.enabled?("disable_asset_#{params[:action]}")
       render_not_found
       return
     end
 
-    @enabled_searches = SEARCHES.select {|key, name| environment.disabled?("disable_asset_#{key}") }
+    @enabled_searches = AVAILABLE_SEARCHES.select {|key, name| environment.disabled?("disable_asset_#{key}") }
     @searching = {}
     @titles = {}
     @enabled_searches.each do |key, name|
@@ -197,12 +216,19 @@ class SearchController < PublicController
     @names = @titles if @names.nil?
   end
 
-  def load_filter
-    @filter = 'more_recent'
-    if SEARCHES.keys.include?(@asset.to_sym)
-      available_filters = asset_class(@asset)::SEARCH_FILTERS
-      @filter = params[:filter] if available_filters.include?(params[:filter])
+  def load_order
+    @order = 'more_recent'
+    if AVAILABLE_SEARCHES.keys.include?(@asset.to_sym)
+      klass = asset_class @asset
+      available_orders = klass::SEARCH_FILTERS[:order]
+      @order = available_orders.first
+      @order = params[:order] if available_orders.include?(params[:order])
     end
+  end
+
+  def load_templates
+    @templates = {}
+    @templates[@asset] = environment.send(@asset.to_s).templates if [:people, :enterprises, :communities].include?(@asset)
   end
 
   def limit
@@ -225,14 +251,7 @@ class SearchController < PublicController
   end
 
   def full_text_search
-    @searches[@asset] = find_by_contents(@asset, @scope, @query, paginate_options, {:category => @category, :filter => @filter})
-  end
-
-  def find_by_contents asset, scope, query, paginate_options={:page => 1}, options={}
-    # only apply fitlers to empty query, sorting is engine specific
-    scope = scope.send(options[:filter]) if options[:filter] and @empty_query
-
-    super asset, scope, query, paginate_options, options
+    @searches[@asset] = find_by_contents(@asset, environment, @scope, @query, paginate_options, {:category => @category, :filter => @order, :template_id => params[:template_id]})
   end
 
   private
@@ -245,6 +264,16 @@ class SearchController < PublicController
 
   def per_page
     20
+  end
+
+  def available_assets
+    assets = ActiveSupport::OrderedHash[
+      :articles, _('Contents'),
+      :enterprises, _('Enterprises'),
+      :people, _('People'),
+      :communities, _('Communities'),
+      :products, _('Products and Services'),
+    ]
   end
 
 end

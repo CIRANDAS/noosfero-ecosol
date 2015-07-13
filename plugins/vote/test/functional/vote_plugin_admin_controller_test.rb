@@ -1,14 +1,11 @@
-require File.dirname(__FILE__) + '/../../../../test/test_helper'
-require File.dirname(__FILE__) + '/../../controllers/vote_plugin_admin_controller'
-
-# Re-raise errors caught by the controller.
-class VotePluginAdminController; def rescue_action(e) raise e end; end
+require 'test_helper'
+require_relative '../../controllers/vote_plugin_admin_controller'
 
 class VotePluginAdminControllerTest < ActionController::TestCase
 
   def setup
     @environment = Environment.default
-    @profile = create_user('profile').person
+    @profile = create_user_with_permission('profile', 'edit_environment_features', Environment.default)
     login_as(@profile.identifier)
   end
 

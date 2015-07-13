@@ -5,7 +5,7 @@ class NetworksPluginEnterpriseController < SuppliersPluginMyprofileController
   before_filter :load_node, :only => [:associate, :destroy]
   before_filter :load_node_and_network, :only => [:new, :add]
 
-  helper NetworksPlugin::NetworksDisplayHelper
+  helper NetworksPlugin::DisplayHelper
 
   def new
     @new_supplier.identifier_from_name = true
@@ -66,7 +66,7 @@ class NetworksPluginEnterpriseController < SuppliersPluginMyprofileController
     @network = @node.network || @node
   end
 
-  extend ControllerInheritance::ClassMethods
+  extend HMVC::ClassMethods
   hmvc NetworksPlugin
 
 end

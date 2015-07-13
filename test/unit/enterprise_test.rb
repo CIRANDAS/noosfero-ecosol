@@ -1,5 +1,5 @@
 # encoding: UTF-8
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class EnterpriseTest < ActiveSupport::TestCase
   fixtures :profiles, :environments, :users
@@ -38,7 +38,7 @@ class EnterpriseTest < ActiveSupport::TestCase
 
   def test_has_domains
     p = Enterprise.new
-    assert_kind_of Array, p.domains
+    assert p.domains.empty?
   end
 
   def test_belongs_to_environment_and_has_default
@@ -169,7 +169,7 @@ class EnterpriseTest < ActiveSupport::TestCase
 
     e = Environment.default
     e.replace_enterprise_template_when_enable = true
-    e.enterprise_template = template
+    e.enterprise_default_template = template
     e.save!
 
     ent = fast_create(Enterprise, :name => 'test enteprise', :identifier => 'test_ent', :enabled => false)
@@ -188,11 +188,11 @@ class EnterpriseTest < ActiveSupport::TestCase
     inactive_template.save!
 
     active_template = create(Enterprise, :name => 'enteprise template', :identifier => 'enterprise_template')
-    assert_equal 3, active_template.boxes.size
+    assert_equal 4, active_template.boxes.size
 
     e = Environment.default
     e.inactive_enterprise_template = inactive_template
-    e.enterprise_template = active_template
+    e.enterprise_default_template = active_template
     e.save!
 
     ent = create(Enterprise, :name => 'test enteprise', :identifier => 'test_ent', :enabled => false)
@@ -400,7 +400,7 @@ class EnterpriseTest < ActiveSupport::TestCase
     e.save!
 
     ent = create(Enterprise, :name => 'test enteprise', :identifier => 'test_ent')
-    assert_equal 3, ent.boxes.size
+    assert_equal 4, ent.boxes.size
   end
 
   should 'collect the highlighted products with image' do
@@ -475,7 +475,7 @@ class EnterpriseTest < ActiveSupport::TestCase
     person = fast_create(Person)
     enterprise = fast_create(Enterprise)
 
-    UserStampSweeper.any_instance.expects(:current_user).returns(person).at_least_once
+    User.current = person.user
     article = create(TinyMceArticle, :profile => enterprise, :name => 'An article about free software')
 
     assert_equal [article.activity], enterprise.activities.map { |a| a.klass.constantize.find(a.id) }
@@ -486,7 +486,7 @@ class EnterpriseTest < ActiveSupport::TestCase
     enterprise = fast_create(Enterprise)
     enterprise2 = fast_create(Enterprise)
 
-    UserStampSweeper.any_instance.expects(:current_user).returns(person).at_least_once
+    User.current = person.user
     article = create(TinyMceArticle, :profile => enterprise2, :name => 'Another article about free software')
 
     assert_not_includes enterprise.activities.map { |a| a.klass.constantize.find(a.id) }, article.activity
@@ -497,6 +497,31 @@ class EnterpriseTest < ActiveSupport::TestCase
     enterprise = build(Enterprise, :identifier => 'testprofile', :environment_id => create_environment('mycolivre.net').id)
 
     assert_equal({:profile => enterprise.identifier, :controller => 'catalog'}, enterprise.catalog_url)
+  end
+
+  should 'check if a community admin user is really a community admin' do
+    c = fast_create(Enterprise, :name => 'my test profile', :identifier => 'mytestprofile')
+    admin = create_user('adminuser').person
+    c.add_admin(admin)
+   
+    assert c.is_admin?(admin)
+  end
+
+  should 'a member user not be a community admin' do
+    c = fast_create(Enterprise, :name => 'my test profile', :identifier => 'mytestprofile')
+    admin = create_user('adminuser').person
+    c.add_admin(admin)
+
+    member = create_user('memberuser').person
+    c.add_member(member)
+    assert !c.is_admin?(member)
+  end
+
+  should 'a moderator user not be a community admin' do
+    c = fast_create(Enterprise, :name => 'my test profile', :identifier => 'mytestprofile')
+    moderator = create_user('moderatoruser').person
+    c.add_moderator(moderator)
+    assert !c.is_admin?(moderator)
   end
 
 

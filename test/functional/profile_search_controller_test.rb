@@ -1,8 +1,5 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 require 'profile_search_controller'
-
-# Re-raise errors caught by the controller.
-class ProfileSearchController; def rescue_action(e) raise e end; end
 
 class ProfileSearchControllerTest < ActionController::TestCase
   def setup
@@ -97,7 +94,7 @@ class ProfileSearchControllerTest < ActionController::TestCase
   end
 
   should 'display number of results found' do
-    article1 = TextileArticle.create(:name => 'Article 1', :body => 'Article to test profile search', :body => 'Article to test profile search', :profile => person)
+    article1 = TextileArticle.create(:name => 'Article 1', :body => 'Article to test profile search', :profile => person)
     article2 = TextileArticle.create(:name => 'Article 2', :body => 'Another article to test profile search', :profile => person)
 
     get 'index', :profile => person.identifier, :q => 'article to test'

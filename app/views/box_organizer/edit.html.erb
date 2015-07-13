@@ -3,7 +3,7 @@
 
   <%= form_tag(:action => 'save', :id => @block.id) do %>
 
-    <%= labelled_form_field(_('Custom title for this block: '), text_field(:block, :title, :maxlength => 20)) %>
+    <%= labelled_form_field(_('Custom title for this block: '), text_field(:block, :title, :maxlength => 25)) %>
 
     <%= render :partial => partial_for_class(@block.class) %>
 
@@ -18,6 +18,21 @@
     </div>
 
     <%= labelled_form_field(_('Show for:'), select(:block, :language, [ [ _('all languages'), 'all']] + environment.locales.map {|key, value| [value, key]} )) %>
+
+    <% if user.is_admin? %>
+      <div class="edit-modes">
+        <%= labelled_form_field _('Edit options:'), select_tag('block[edit_modes]', options_from_collection_for_select(@block.edit_block_options, :first, :last, @block.edit_modes)) %>
+      </div>
+      <div class="move-modes">
+        <%= labelled_form_field _('Move options:'), select_tag('block[move_modes]', options_from_collection_for_select(@block.move_block_options, :first, :last, @block.move_modes)) %>
+      </div>
+    <% end %>
+
+    <% if @block.owner.kind_of?(Profile) && @block.owner.is_template? %>
+      <div class="mirror_block">
+        <%= labelled_check_box(_("Mirror"), "block[mirror]", value = "1", checked = @block.mirror) %>
+      </div>
+    <% end %>
 
     <% button_bar do %>
       <%= submit_button(:save, _('Save')) %>

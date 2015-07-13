@@ -11,21 +11,20 @@ module TinymceHelper
   end
 
   def tinymce_init_js options = {}
-    options.merge! :document_base_url => environment.top_url,
+    options.merge! :document_base_url => top_url,
       :content_css => "/stylesheets/tinymce.css,#{macro_css_files}",
       :plugins => %w[compat3x advlist autolink lists link image charmap print preview hr anchor pagebreak
         searchreplace wordcount visualblocks visualchars code fullscreen
         insertdatetime media nonbreaking save table contextmenu directionality
         emoticons template paste textcolor colorpicker textpattern],
+      :image_advtab => true,
       :language => tinymce_language
 
-    
+    options[:toolbar1] = "fullscreen | insertfile undo redo | copy paste | bold italic underline | styleselect fontsizeselect | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image"
     if options[:mode] == 'simple'
       options[:menubar] = false
-      options[:toolbar1] = "bold italic underline forecolor backcolor alignleft aligncenter bullist numlist link"
     else
       options[:menubar] = 'edit insert view tools'
-      options[:toolbar1] = "insertfile undo redo | copy paste | bold italic underline | styleselect fontsizeselect | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image"
       options[:toolbar2] = 'print preview code media | table'
 
       options[:toolbar2] += ' | macros'

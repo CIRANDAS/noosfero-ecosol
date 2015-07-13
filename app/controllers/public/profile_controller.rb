@@ -16,13 +16,7 @@ class ProfileController < PublicController
       @activities = @profile.activities.paginate(:per_page => 15, :page => params[:page])
     end
     @tags = profile.article_tags
-    unless profile.display_info_to?(user)
-      if profile.visible?
-        private_profile
-      else
-        invisible_profile
-      end
-    end
+    allow_access_to_page
   end
 
   def tags
@@ -42,7 +36,7 @@ class ProfileController < PublicController
 
   def tag_feed
     @tag = params[:id]
-    tagged = profile.articles.paginate(:per_page => 20, :page => 1, :order => 'published_at DESC', :include => :tags, :conditions => ['tags.name LIKE ?', @tag])
+    tagged = profile.articles.paginate(:per_page => 20, :page => 1).order('published_at DESC').joins(:tags).where('tags.name LIKE ?', @tag)
     feed_writer = FeedWriter.new
     data = feed_writer.write(
       tagged,
@@ -71,9 +65,9 @@ class ProfileController < PublicController
   end
 
   def members
-    if is_cache_expired?(profile.members_cache_key(params))
+    #if is_cache_expired?(profile.members_cache_key(params))
       @members = profile.members_by_name.includes(relations_to_include).paginate(:per_page => members_per_page, :page => params[:npage], :total_entries => profile.members.count)
-    end
+    #end
   end
 
   def fans
@@ -209,7 +203,7 @@ class ProfileController < PublicController
 
   def more_comments
     profile_filter = @profile.person? ? {:user_id => @profile} : {:target_id => @profile}
-    activity = ActionTracker::Record.find(:first, :conditions => {:id => params[:activity]}.merge(profile_filter))
+    activity = ActionTracker::Record.where({:id => params[:activity]}.merge profile_filter).first
     comments_count = activity.comments.count
     comment_page = (params[:comment_page] || 1).to_i
     comments_per_page = 5
@@ -229,7 +223,7 @@ class ProfileController < PublicController
   end
 
   def more_replies
-    activity = Scrap.find(:first, :conditions => {:id => params[:activity], :receiver_id => @profile, :scrap_id => nil})
+    activity = Scrap.where(:id => params[:activity], :receiver_id => @profile, :scrap_id => nil).first
     comments_count = activity.replies.count
     comment_page = (params[:comment_page] || 1).to_i
     comments_per_page = 5
@@ -276,7 +270,7 @@ class ProfileController < PublicController
   def remove_notification
     begin
       raise if !can_edit_profile
-      notification = ActionTrackerNotification.find(:first, :conditions => {:profile_id => profile.id, :action_tracker_id => params[:activity_id]})
+      notification = ActionTrackerNotification.where(profile_id: profile.id, action_tracker_id: params[:activity_id]).first
       notification.destroy
       render :text => _('Notification successfully removed.')
     rescue
@@ -395,17 +389,6 @@ class ProfileController < PublicController
       redirect_to back
     else
       redirect_to profile.url
-    end
-  end
-
-  def private_profile
-    private_profile_partial_parameters
-    render :action => 'index', :status => 403
-  end
-
-  def invisible_profile
-    unless profile.is_template?
-      render_access_denied(_("This profile is inaccessible. You don't have the permission to view the content here."), _("Oops ... you cannot go ahead here"))
     end
   end
 

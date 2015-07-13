@@ -2,7 +2,7 @@
   <div class="search-enterprise-item">
     <div class="search-enterprise-item-column-left">
       <%= profile_image_link enterprise, :portrait, 'div',
-        @filter == 'more_recent' ? enterprise.send(@filter + '_label') + show_date(enterprise.created_at) : enterprise.send(@filter + '_label') %>
+        @order == 'more_recent' ? enterprise.send(@order + '_label') + show_date(enterprise.created_at) : enterprise.send(@order + '_label') %>
     </div>
     <div class="search-enterprise-item-column-right">
       <%= link_to_homepage enterprise.name, enterprise, class: "search-result-title" %>
@@ -12,7 +12,7 @@
         <% elsif enterprise.home_page and enterprise.home_page.body %>
           <% body_stripped = strip_tags(enterprise.home_page.body) %>
         <% end %>
-        <%= excerpt(body_stripped, body_stripped.first(3), 200) if body_stripped %>
+        <%= excerpt body_stripped, body_stripped.first(3), radius: 200 if body_stripped %>
       </div>
       <div class="search-enterprise-region">
         <span class="search-enterprise-region-label"><%= _("City") %></span>

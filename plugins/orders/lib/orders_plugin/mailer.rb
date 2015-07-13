@@ -3,37 +3,46 @@ class OrdersPlugin::Mailer < Noosfero::Plugin::MailerBase
   include OrdersPlugin::TranslationHelper
 
   helper ApplicationHelper
-  helper OrdersPlugin::OrdersDisplayHelper
+  helper OrdersPlugin::DisplayHelper
   helper OrdersPlugin::DateHelper
   helper OrdersPlugin::TranslationHelper
 
   attr_accessor :environment
   attr_accessor :profile
 
-  def message_to_consumer_for_order profile, order, subject, message = nil
+  def message_to_consumer profile, consumer, subject, message = nil, options = {}
+    @consumer = consumer
+    message_to_actor profile, consumer, subject, message, options
+  end
+
+  def message_to_supplier profile, supplier, subject, message = nil, options = {}
+    @supplier = supplier
+    message_to_actor profile, supplier, subject, message, options
+  end
+
+  def message_to_actor profile, actor, subject, message = nil, options = {}
     self.environment = profile.environment
     @profile = profile
-    @order = order
-    @consumer = order.consumer
     @message = message
+    @order = options[:order]
+    @include_order = options[:include_order] == '1'
 
-    mail to: profile_recipients(order.consumer),
-      from: environment.noreply_email,
-      reply_to: profile_recipients(profile),
+    mail from: environment.noreply_email,
+      to: profile_recipients(actor),
+      reply_to: profile_recipients(@profile),
       subject: t('lib.mailer.profile_subject') % {profile: profile.name, subject: subject}
   end
 
-  def message_to_consumer profile, consumer, subject, message
+  def message_to_admins profile, member, subject, message
     self.environment = profile.environment
     @profile = profile
-    @consumer = consumer
+    @member = member
     @message = message
-    @environment = profile.environment
 
-    mail to: profile_recipients(consumer),
-      from: environment.noreply_email,
-      reply_to: profile_recipients(profile),
-      subject: t('lib.mailer.profile_subject') % {profile: name, subject: subject}
+    mail from: environment.noreply_email,
+      to: profile_recipients(@profile),
+      reply_to: profile_recipients(@member),
+      subject: t('lib.mailer.profile_subject') % {profile: profile.name, subject: subject}
   end
 
   def order_confirmation order
@@ -65,6 +74,8 @@ class OrdersPlugin::Mailer < Noosfero::Plugin::MailerBase
 
   def profile_recipients profile
     if profile.person?
+      profile.contact_email
+    elsif profile.contact_email.present?
       profile.contact_email
     else
       profile.admins.map{ |p| p.contact_email }

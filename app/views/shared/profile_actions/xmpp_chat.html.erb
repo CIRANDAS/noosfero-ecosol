@@ -1,5 +1,8 @@
-<% if profile.members.include?(user) %>
+<% label_name = profile.person? ? _('Open chat') : _('Join chat room') %>
+<% display = profile.person? ? profile.friends.include?(user) : profile.members.include?(user) %>
+
+<% if display %>
   <li>
-  <%= button_to_function(:chat, _('Enter chat room'), "open_chat_window(this, '##{profile.full_jid}')") %>
+    <%= button(:chat, label_name , {}, :class => 'open-conversation', 'data-jid' => profile.jid) %>
   </li>
 <% end %>

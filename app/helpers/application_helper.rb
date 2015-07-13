@@ -50,9 +50,7 @@ module ApplicationHelper
 
   include CaptchaHelper
 
-  include PluginsHelper
-
-  include PluginsHelper
+  include ChatHelper
 
   def locale
     (@page && !@page.language.blank?) ? @page.language : FastGettext.locale
@@ -224,6 +222,7 @@ module ApplicationHelper
   end
 
   def button(type, label, url, html_options = {})
+    html_options ||= {}
     the_class = 'with-text'
     if html_options.has_key?(:class)
       the_class << ' ' << html_options[:class]
@@ -409,19 +408,27 @@ module ApplicationHelper
       end
   end
 
-  def theme_view_file(template)
+  def theme_view_file(template, theme=nil)
     # Since we cannot control what people are doing in external themes, we
     # will keep looking for the deprecated .rhtml extension here.
-    file = Rails.root.join('public', theme_path[1..-1], template + '.html.erb')
+    addr = theme ? "designs/themes/#{theme}" : theme_path[1..-1]
+    file = Rails.root.join('public', addr, template + '.html.erb')
     return file if File.exists?(file)
     nil
   end
 
   def theme_include(template, options = {})
-    file = theme_view_file(template)
-    options.merge!({:file => file, :use_full_path => false})
+    from_theme_include(nil, template, options)
+  end
+
+  def env_theme_include(template, options = {})
+    from_theme_include(environment.theme, template, options)
+  end
+
+  def from_theme_include(theme, template, options = {})
+    file = theme_view_file(template, theme)
     if file
-      render options
+      render options.merge(file: file, use_full_path: false)
     else
       nil
     end
@@ -455,6 +462,14 @@ module ApplicationHelper
 
   def theme_extra_navigation
     @theme_extra_navigation ||= theme_include 'navigation'
+  end
+
+  def global_header
+    @global_header ||= env_theme_include 'global_header'
+  end
+
+  def global_footer
+    @global_footer ||= env_theme_include 'global_footer'
   end
 
   def is_testing_theme
@@ -604,7 +619,7 @@ module ApplicationHelper
     link_to(
       content_tag( 'span', profile_image( profile, size ), :class => 'profile-image' ) +
       content_tag( 'span', h(name), :class => ( profile.class == Person ? 'fn' : 'org' ) ) +
-      extra_info + profile_sex_icon( profile ) + profile_cat_icons( profile ),
+      extra_info + profile_sex_icon( profile ),# + profile_cat_icons( profile ),
       profile.url,
       :class => 'profile_link url',
       :help => _('Click on this icon to go to the <b>%s</b>\'s home page') % profile.name,
@@ -692,6 +707,24 @@ module ApplicationHelper
 
   def theme_javascript_ng
     script = theme_javascript_src
+    javascript_include_tag script if script
+  end
+
+  def template_path
+    if profile.nil?
+      "/designs/templates/#{environment.layout_template}"
+    else
+      "/designs/templates/#{profile.layout_template}"
+    end
+  end
+
+  def template_javascript_src
+    script = File.join template_path, '/javascripts/template.js'
+    script if File.exists? File.join(Rails.root, 'public', script)
+  end
+
+  def template_javascript_ng
+    script = template_javascript_src
     javascript_include_tag script if script
   end
 
@@ -841,7 +874,7 @@ module ApplicationHelper
       field_html += capture(&block)
     end
 
-    if controller.action_name == 'signup' || controller.action_name == 'new_community' || (controller.controller_name == "enterprise_registration" && controller.action_name == 'index')
+    if controller.action_name == 'signup' || controller.action_name == 'new_community' || (controller.controller_name == "enterprise_registration" && controller.action_name == 'index') || (controller.controller_name == 'home' && controller.action_name == 'index' && user.nil?)
       if profile.signup_fields.include?(name)
         result = field_html
       end
@@ -873,11 +906,18 @@ module ApplicationHelper
   end
 
   def base_url
-    environment.top_url
+    environment.top_url(request.scheme)
+  end
+  alias :top_url :base_url
+
+  class View < ActionView::Base
+    def url_for *args
+      self.controller.url_for *args
+    end
   end
 
   def helper_for_article(article)
-    article_helper = ActionView::Base.new
+    article_helper = View.new
     article_helper.controller = controller
     article_helper.extend ArticleHelper
     article_helper.extend Rails.application.routes.url_helpers
@@ -900,22 +940,23 @@ module ApplicationHelper
     article_helper.cms_label_for_edit
   end
 
+  def label_for_clone_article(article)
+    translated_types = {
+      Folder => _('Folder'),
+      Blog => _('Blog'),
+      Event => _('Event'),
+      Forum => _('Forum')
+    }
+
+    translated_type = translated_types[article.class] || _('Article')
+
+    _('Clone %s') % translated_type
+  end
+
   def add_rss_feed_to_head(title, url)
     content_for :feeds do
       tag(:link, :rel => 'alternate', :type => 'application/rss+xml', :title => title, :href => url_for(url))
     end
-  end
-
-  def icon_theme_stylesheet_path
-    icon_themes = []
-    theme_icon_themes = theme_option(:icon_theme) || []
-    for icon_theme in theme_icon_themes do
-      theme_path = "/designs/icons/#{icon_theme}/style.css"
-      if File.exists?(Rails.root.join('public', theme_path[1..-1]))
-        icon_themes << theme_path
-      end
-    end
-    icon_themes
   end
 
   def page_title
@@ -957,9 +998,9 @@ module ApplicationHelper
   # from Article model for an ArticleBlock.
   def reference_to_article(text, article, anchor=nil)
     if article.profile.domains.empty?
-      href = "/#{article.url[:profile]}/"
+      href = "#{Noosfero.root}/#{article.url[:profile]}/"
     else
-      href = "http://#{article.profile.domains.first.name}/"
+      href = "http://#{article.profile.domains.first.name}#{Noosfero.root}/"
     end
     href += article.url[:page].join('/')
     href += '#' + anchor if anchor
@@ -1153,7 +1194,7 @@ module ApplicationHelper
       pending_tasks_count = link_to(count.to_s, user.tasks_url, :id => 'pending-tasks-count', :title => _("Manage your pending tasks"))
     end
 
-    (_("<span class='welcome'>Welcome,</span> %s") % link_to("<i style='background-image:url(#{user.profile_custom_icon(gravatar_default)})'></i><strong>#{user.identifier}</strong>", user.public_profile_url, :id => "homepage-link", :title => _('Go to your homepage'))) +
+    (_("<span class='welcome'>Welcome,</span> %s") % link_to("<i style='background-image:url(#{user.profile_custom_icon(gravatar_default)})'></i><strong>#{user.identifier}</strong>", user.url, :id => "homepage-link", :title => _('Go to your homepage'))) +
     render_environment_features(:usermenu) +
     admin_link +
     manage_enterprises +
@@ -1183,35 +1224,6 @@ module ApplicationHelper
     list.sort.inject(Hash.new(0)){|h,i| h[i] += 1; h }.collect{ |x, n| [n, connector, x].join(" ") }.sort
   end
 
-  #FIXME Use time_ago_in_words instead of this method if you're using Rails 2.2+
-  def time_ago_as_sentence(from_time, include_seconds = false)
-    to_time = Time.now
-    from_time = Time.parse(from_time.to_s)
-    from_time = from_time.to_time if from_time.respond_to?(:to_time)
-    to_time = to_time.to_time if to_time.respond_to?(:to_time)
-    distance_in_minutes = (((to_time - from_time).abs)/60).round
-    distance_in_seconds = ((to_time - from_time).abs).round
-    case distance_in_minutes
-      when 0..1
-        return (distance_in_minutes == 0) ? _('less than a minute') : _('1 minute') unless include_seconds
-        case distance_in_seconds
-          when 0..4   then _('less than 5 seconds')
-          when 5..9   then _('less than 10 seconds')
-          when 10..19 then _('less than 20 seconds')
-          when 20..39 then _('half a minute')
-          when 40..59 then _('less than a minute')
-          else             _('1 minute')
-        end
-
-      when 2..44           then _('%{distance} minutes ago') % { :distance => distance_in_minutes }
-      when 45..89          then _('about 1 hour ago')
-      when 90..1439        then _('about %{distance} hours ago') % { :distance => (distance_in_minutes.to_f / 60.0).round }
-      when 1440..2879      then _('1 day ago')
-      when 2880..10079     then _('%{distance} days ago') % { :distance => (distance_in_minutes / 1440).round }
-      else                      show_time(from_time)
-    end
-  end
-
   def comment_balloon(options = {}, &block)
     wrapper = content_tag(:div, capture(&block), :class => 'comment-balloon-content')
     (1..8).to_a.reverse.each { |i| wrapper = content_tag(:div, wrapper, :class => "comment-wrapper-#{i}") }
@@ -1230,7 +1242,7 @@ module ApplicationHelper
 
   def task_information(task)
     values = {}
-    values.merge!({:requestor => link_to(task.requestor.name, task.requestor.public_profile_url)}) if task.requestor
+    values.merge!({:requestor => link_to(task.requestor.name, task.requestor.url)}) if task.requestor
     values.merge!({:subject => content_tag('span', task.subject, :class=>'task_target')}) if task.subject
     values.merge!({:linked_subject => link_to(content_tag('span', task.linked_subject[:text], :class => 'task_target'), task.linked_subject[:url])}) if task.linked_subject
     values.merge!(task.information[:variables]) if task.information[:variables]
@@ -1330,8 +1342,19 @@ module ApplicationHelper
     end
   end
 
-  def remove_content_button(action)
-    @plugins.dispatch("content_remove_#{action.to_s}", @page).include?(true)
+  def content_remove_spread(content)
+    !content.public? || content.folder? || (profile == user && user.communities.blank? && !environment.portal_enabled)
+  end
+
+  def remove_content_button(action, content)
+    method_name = "content_remove_#{action.to_s}"
+    plugin_condition = @plugins.dispatch(method_name, content).include?(true)
+    begin
+      core_condition = self.send(method_name, content)
+    rescue NoMethodError
+      core_condition = false
+    end
+    core_condition || plugin_condition
   end
 
   def template_options(kind, field_name)
@@ -1339,10 +1362,8 @@ module ApplicationHelper
     return '' if templates.count == 0
     return hidden_field_tag("#{field_name}[template_id]", templates.first.id) if templates.count == 1
 
-    counter = 0
     radios = templates.map do |template|
-      counter += 1
-      content_tag('li', labelled_radio_button(link_to(template.name, template.url, :target => '_blank'), "#{field_name}[template_id]", template.id, counter==1))
+      content_tag('li', labelled_radio_button(link_to(template.name, template.url, :target => '_blank'), "#{field_name}[template_id]", template.id, environment.is_default_template?(template)))
     end.join("\n")
 
     content_tag('div', content_tag('label', _('Profile organization'), :for => 'template-options', :class => 'formlabel') +
@@ -1414,7 +1435,7 @@ module ApplicationHelper
     #TODO This way is more efficient but do not support macro inside of
     #     macro. You must parse them from the inside-out in order to enable
     #     that.
-    doc.search('.macro').each do |macro|
+    doc.css('.macro').each do |macro|
       macro_name = macro['data-macro']
       result = @plugins.parse_macro(macro_name, macro, source)
       macro.inner_html = result.kind_of?(Proc) ? self.instance_exec(&result) : result
@@ -1436,6 +1457,43 @@ module ApplicationHelper
     content_tag('ul', article.versions.map {|v| link_to("r#{v.version}", @page.url.merge(:version => v.version))})
   end
 
+  def search_input_with_suggestions(name, asset, default, options = {})
+    text_field_tag name, default, options.merge({:class => 'search-input-with-suggestions', 'data-asset' => asset})
+  end
+
+  def profile_suggestion_profile_connections(suggestion)
+    profiles = suggestion.profile_connections.first(4).map do |profile|
+      link_to(profile_image(profile, :icon, :title => profile.name), profile.url, :class => 'profile-suggestion-connection-icon')
+    end
+
+    controller_target = suggestion.suggestion_type == 'Person' ? :friends : :memberships
+    profiles << link_to("<big> +#{suggestion.profile_connections.count - 4}</big>", :controller => controller_target, :action => :connections, :id => suggestion.suggestion_id) if suggestion.profile_connections.count > 4
+
+    if profiles.present?
+      content_tag(:div, profiles.join , :class => 'profile-connections')
+    else
+      ''
+    end
+  end
+
+  def profile_suggestion_tag_connections(suggestion)
+    tags = suggestion.tag_connections.first(4).map do |tag|
+      tag.name + ', '
+    end
+    last_tag = tags.pop
+    tags << last_tag.strip.chop if last_tag.present?
+    title = tags.join
+
+    controller_target = suggestion.suggestion_type == 'Person' ? :friends : :memberships
+    tags << ' ' + link_to('...', {:controller => controller_target, :action => :connections, :id => suggestion.suggestion_id}, :class => 'more-tag-connections', :title => _('See all connections')) if suggestion.tag_connections.count > 4
+
+    if tags.present?
+      content_tag(:div, tags.join, :class => 'tag-connections', :title => title)
+    else
+      ''
+    end
+  end
+
   def labelled_colorpicker_field(human_name, object_name, method, options = {})
     options[:id] ||= 'text-field-' + FormsHelper.next_id_number
     content_tag('label', human_name, :for => options[:id], :class => 'formlabel') +
@@ -1444,6 +1502,28 @@ module ApplicationHelper
 
   def colorpicker_field(object_name, method, options = {})
     text_field(object_name, method, options.merge(:class => 'colorpicker_field'))
+  end
+
+  def fullscreen_buttons(itemId)
+    content="
+      <script>fullscreenPageLoad('#{itemId}')</script>
+    "
+    content+=content_tag('a', content_tag('span',_("Full screen")),
+    { :id=>"fullscreen-btn",
+      :onClick=>"toggle_fullwidth('#{itemId}')",
+      :class=>"button with-text icon-fullscreen",
+      :href=>"#",
+      :title=>_("Go to full screen mode")
+    })
+
+    content+=content_tag('a', content_tag('span',_("Exit full screen")),
+    { :style=>"display: none;",
+      :id=>"exit-fullscreen-btn",
+      :onClick=>"toggle_fullwidth('#{itemId}')",
+      :class=>"button with-text icon-fullscreen",
+      :href=>"#",
+      :title=>_("Exit full screen mode")
+    })
   end
 
 end

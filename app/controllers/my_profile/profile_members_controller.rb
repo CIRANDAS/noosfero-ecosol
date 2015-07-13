@@ -20,7 +20,7 @@ class ProfileMembersController < MyProfileController
         redirect_to :action => :last_admin
       elsif @person.define_roles(@roles, profile)
         session[:notice] = _('Roles successfuly updated')
-        redirect_to :controller => 'profile_editor'
+        redirect_to :action => 'index'
       else
         session[:notice] = _('Couldn\'t change the roles')
         redirect_to :action => 'index'
@@ -47,7 +47,7 @@ class ProfileMembersController < MyProfileController
   end
 
   def remove_role
-    @association = RoleAssignment.find(:all, :conditions => {:id => params[:id], :target_id => profile.id})
+    @association = RoleAssignment.where(:id => params[:id], :target_id => profile.id)
     if @association.destroy
       session[:notice] = 'Member succefully unassociated'
     else
@@ -58,6 +58,7 @@ class ProfileMembersController < MyProfileController
 
   def change_role
     @roles = Profile::Roles.organization_member_roles(environment.id)
+    @custom_roles = profile.custom_roles
     begin
       @member = profile.members.find(params[:id])
     rescue ActiveRecord::RecordNotFound
@@ -119,7 +120,7 @@ class ProfileMembersController < MyProfileController
 
   def search_user
     role = Role.find(params[:role])
-    render :text => environment.people.find(:all, :conditions => ['LOWER(name) LIKE ? OR LOWER(identifier) LIKE ?', "%#{params['q_'+role.key]}%", "%#{params['q_'+role.key]}%"]).
+    render :text => environment.people.where('LOWER(name) LIKE ? OR LOWER(identifier) LIKE ?', "%#{params['q_'+role.key]}%", "%#{params['q_'+role.key]}%").
       select { |person| !profile.members_by_role(role).include?(person) }.
       map {|person| {:id => person.id, :name => person.name} }.
       to_json

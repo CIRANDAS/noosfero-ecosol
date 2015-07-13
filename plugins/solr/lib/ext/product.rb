@@ -2,6 +2,9 @@ require_dependency 'product'
 
 class Product
 
+  SEARCH_FILTERS[:order].unshift 'relevance'
+  SEARCH_FILTERS[:order] << 'closest'
+
   after_save_reindex [:enterprise], with: :delayed_job
 
   # overwrite on subclasses
@@ -21,6 +24,15 @@ class Product
 
   alias_method :solr_plugin_ac_name, :name
   alias_method :solr_plugin_ac_category, :category_name
+
+  def solr_plugin_supplier
+    values = [self.profile.name, self.profile.short_name]
+    values.concat [self.supplier.name, self.supplier.name_abbreviation] if defined? SuppliersPlugin
+    values
+  end
+  def solr_plugin_ac_supplier
+    self.solr_plugin_supplier
+  end
 
   def solr_plugin_f_category
     self.product_category.name
@@ -64,7 +76,8 @@ class Product
   end
 
   def solr_plugin_public
-    self.public?
+    # environment.products only consider enterprises
+    self.public? and self.profile.enterprise?
   end
 
   def solr_plugin_available_sortable
@@ -83,10 +96,14 @@ class Product
     (price.nil? or price.zero?) ? nil : price
   end
 
+  def solr_plugin_unarchived
+    !self.archived
+  end
+
   acts_as_faceted fields: {
-      solr_plugin_f_category: {label: _('Related products')},
-      solr_plugin_f_region: {label: _('City'), proc: method(:solr_plugin_f_region_proc).to_proc},
-      solr_plugin_f_qualifier: {label: _('Qualifiers'), proc: method(:solr_plugin_f_qualifier_proc).to_proc},
+      solr_plugin_f_category: {label: _('Related products'), context_criteria: proc{ !empty_search? } },
+      solr_plugin_f_region: {label: c_('City'), proc: method(:solr_plugin_f_region_proc).to_proc},
+      solr_plugin_f_qualifier: {label: c_('Qualifiers'), proc: method(:solr_plugin_f_qualifier_proc).to_proc},
     }, category_query: proc { |c| "solr_plugin_category_filter:#{c.id}" },
     order: [:solr_plugin_f_category, :solr_plugin_f_region, :solr_plugin_f_qualifier]
 
@@ -106,15 +123,18 @@ class Product
   acts_as_searchable fields: facets_fields_for_solr + [
       # searched fields
       {name: {type: :text, boost: 2.0}},
+      {solr_plugin_supplier: {type: :text}},
       {description: :text}, {category_full_name: :text},
       # filtered fields
       {solr_plugin_public: :boolean},
       {environment_id: :integer}, {profile_id: :integer},
       {enabled: :boolean}, {solr_plugin_category_filter: :integer},
-      {available: :boolean}, {highlighted: :boolean},
+      {available: :boolean}, {archived: :boolean}, {highlighted: :boolean},
+      {solr_plugin_unarchived: :boolean},
       # fields for autocompletion
       {solr_plugin_ac_name: :ngram_text},
       {solr_plugin_ac_category: :ngram_text},
+      {solr_plugin_ac_supplier: {type: :ngram_text}},
       # ordered/query-boosted fields
       {solr_plugin_available_sortable: :string}, {solr_plugin_highlighted_sortable: :string},
       {solr_plugin_price_sortable: :decimal}, {solr_plugin_name_sortable: :string},
@@ -130,7 +150,9 @@ class Product
     boost: proc{ |p| p.solr_plugin_boost },
     if: proc{ |p| p.solr_index? }
 
-  handle_asynchronously :solr_save
-  handle_asynchronously :solr_destroy
+  # we don't need this with NRT from solr 5
+  #handle_asynchronously :solr_save
+  # solr_destroy don't work with delayed_job, as AR won't be found
+  #handle_asynchronously :solr_destroy
 
 end

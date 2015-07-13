@@ -1,5 +1,5 @@
 # encoding: UTF-8
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class PersonTest < ActiveSupport::TestCase
   fixtures :profiles, :users, :environments
@@ -324,7 +324,9 @@ class PersonTest < ActiveSupport::TestCase
   should 'already request friendship' do
     p1 = create_user('testuser1').person
     p2 = create_user('testuser2').person
-    create(AddFriend, :person => p1, :friend => p2)
+    create(AddFriend, person: p1, friend: p2).finish
+    assert !p1.already_request_friendship?(p2)
+    create(AddFriend, person: p1, friend: p2)
     assert p1.already_request_friendship?(p2)
   end
 
@@ -1004,9 +1006,9 @@ class PersonTest < ActiveSupport::TestCase
     p = create_user('test_user').person
     c = fast_create(Community, :name => "Foo")
     c.add_member(p)
-    assert_equal ["Foo"], ActionTracker::Record.last(:conditions => {:verb => 'join_community'}).get_resource_name
+    assert_equal ["Foo"], ActionTracker::Record.where(verb: 'join_community').last.get_resource_name
     c.reload.add_moderator(p.reload)
-    assert_equal ["Foo"], ActionTracker::Record.last(:conditions => {:verb => 'join_community'}).get_resource_name
+    assert_equal ["Foo"], ActionTracker::Record.where(verb: 'join_community').last.get_resource_name
   end
 
   should 'the tracker target be Community when a person joins a community' do
@@ -1014,7 +1016,7 @@ class PersonTest < ActiveSupport::TestCase
     p = create_user('test_user').person
     c = fast_create(Community, :name => "Foo")
     c.add_member(p)
-    assert_kind_of Community, ActionTracker::Record.last(:conditions => {:verb => 'join_community'}).target
+    assert_kind_of Community, ActionTracker::Record.where(verb: 'join_community').last.target
   end
 
   should 'the community be notified specifically when a person joins a community' do
@@ -1022,7 +1024,7 @@ class PersonTest < ActiveSupport::TestCase
     p = create_user('test_user').person
     c = fast_create(Community, :name => "Foo")
     c.add_member(p)
-    assert_not_nil ActionTracker::Record.last(:conditions => {:verb => 'add_member_in_community'})
+    assert_not_nil ActionTracker::Record.where(verb: 'add_member_in_community').last
   end
 
   should 'the community specific notification created when a member joins community could not be propagated to members' do
@@ -1130,6 +1132,26 @@ class PersonTest < ActiveSupport::TestCase
     assert_equal [person], Person.members_of(community)
   end
 
+  should 'return unique non-members of a community' do
+    member = fast_create(Person)
+    person = fast_create(Person)
+    community = fast_create(Community)
+    community.add_member(member)
+
+    assert_equal (Person.all - Person.members_of(community)).sort, Person.not_members_of(community).sort
+  end
+
+  should 'return unique non-friends of a person' do
+    friend = fast_create(Person)
+    not_friend = fast_create(Person)
+    person = fast_create(Person)
+    person.add_friend(friend)
+    friend.add_friend(person)
+
+    assert_includes Person.not_friends_of(person), not_friend
+    assert_not_includes Person.not_friends_of(person), friend
+  end
+
   should 'be able to pass array to members_of' do
     person1 = fast_create(Person)
     community = fast_create(Community)
@@ -1140,6 +1162,20 @@ class PersonTest < ActiveSupport::TestCase
 
     assert_includes Person.members_of([community, enterprise]), person1
     assert_includes Person.members_of([community, enterprise]), person2
+  end
+
+  should 'be able to pass array to not_members_of' do
+    person1 = fast_create(Person)
+    community = fast_create(Community)
+    community.add_member(person1)
+    person2 = fast_create(Person)
+    enterprise = fast_create(Enterprise)
+    enterprise.add_member(person2)
+    person3 = fast_create(Person)
+
+    assert_not_includes Person.not_members_of([community, enterprise]), person1
+    assert_not_includes Person.not_members_of([community, enterprise]), person2
+    assert_includes Person.not_members_of([community, enterprise]), person3
   end
 
   should 'find more active people' do
@@ -1213,31 +1249,48 @@ class PersonTest < ActiveSupport::TestCase
     person = create_user.person
     another_person = create_user.person
 
-    UserStampSweeper.any_instance.stubs(:current_user).returns(another_person)
+    User.current = another_person.user
     scrap = create(Scrap, defaults_for_scrap(:sender => another_person, :receiver => person, :content => 'A scrap'))
-    UserStampSweeper.any_instance.expects(:current_user).returns(person).at_least_once
+    User.current = person.user
     article = create(TinyMceArticle, :profile => person, :name => 'An article about free software')
 
-    assert_equivalent [scrap,article.activity], person.activities.map { |a| a.klass.constantize.find(a.id) }
+    assert_equivalent [scrap,article.activity], person.activities.map { |a| a.activity }
   end
 
   should 'not return tracked_actions and scraps from others as activities' do
     ActionTracker::Record.destroy_all
-    person = fast_create(Person)
-    another_person = fast_create(Person)
+    person = create_user.person
+    another_person = create_user.person
 
     person_scrap = create(Scrap, defaults_for_scrap(:sender => person, :receiver => person, :content => 'A scrap from person'))
     another_person_scrap = create(Scrap, defaults_for_scrap(:sender => another_person, :receiver => another_person, :content => 'A scrap from another person'))
 
-    UserStampSweeper.any_instance.stubs(:current_user).returns(another_person)
+    User.current = another_person.user
     create(TinyMceArticle, :profile => another_person, :name => 'An article about free software from another person')
     another_person_activity = ActionTracker::Record.last
 
-    UserStampSweeper.any_instance.stubs(:current_user).returns(person)
+    User.current = person.user
     create(TinyMceArticle, :profile => person, :name => 'An article about free software')
     person_activity = ActionTracker::Record.last
 
-    assert_equivalent [person_scrap,person_activity], person.activities.map { |a| a.klass.constantize.find(a.id) }
+    assert_equivalent [person_scrap,person_activity], person.activities.map { |a| a.activity }
+  end
+
+  should 'grant every permission over profile for its admin' do
+    admin = create_user('some-user').person
+    profile = fast_create(Profile)
+    profile.add_admin(admin)
+
+    assert admin.has_permission?('anything', profile), 'Admin does not have every permission!'
+  end
+
+  should 'grant every permission over profile for environment admin' do
+    admin = create_user('some-user').person
+    profile = fast_create(Profile)
+    environment = profile.environment
+    environment.add_admin(admin)
+
+    assert admin.has_permission?('anything', profile), 'Environment admin does not have every permission!'
   end
 
   should 'allow plugins to extend person\'s permission access' do
@@ -1293,14 +1346,12 @@ class PersonTest < ActiveSupport::TestCase
 
     abusers = Person.abusers
 
-    assert_equal ActiveRecord::Relation, abusers.class
     assert_includes abusers, abuser1
     assert_includes abusers, abuser2
     assert_not_includes abusers, person
 
     non_abusers = Person.non_abusers
 
-    assert_equal ActiveRecord::Relation, non_abusers.class
     assert_not_includes non_abusers, abuser1
     assert_not_includes non_abusers, abuser2
     assert_includes non_abusers, person
@@ -1470,4 +1521,248 @@ class PersonTest < ActiveSupport::TestCase
       person.reload
     end
   end
+
+  should 'have a list of suggested people to be friend' do
+    person = create_user('person').person
+    suggested_friend = fast_create(Person)
+
+    ProfileSuggestion.create(:person => person, :suggestion => suggested_friend)
+    assert_equal [suggested_friend], person.suggested_people
+  end
+
+  should 'have a list of suggested communities to be member' do
+    person = create_user('person').person
+    suggested_community = fast_create(Community)
+
+    ProfileSuggestion.create(:person => person, :suggestion => suggested_community)
+    assert_equal [suggested_community], person.suggested_communities
+  end
+
+  should 'remove profile suggestion when person is destroyed' do
+    person = create_user('person').person
+    suggested_community = fast_create(Community)
+
+    suggestion = ProfileSuggestion.create(:person => person, :suggestion => suggested_community)
+
+    person.destroy
+    assert_raise ActiveRecord::RecordNotFound do
+      ProfileSuggestion.find suggestion.id
+    end
+  end
+
+  should 'remove profile suggestion when suggested profile is destroyed' do
+    person = create_user('person').person
+    suggested_community = fast_create(Community)
+
+    suggestion = ProfileSuggestion.create(:person => person, :suggestion => suggested_community)
+
+    suggested_community.destroy
+    assert_raise ActiveRecord::RecordNotFound do
+      ProfileSuggestion.find suggestion.id
+    end
+  end
+
+  should 'not suggest disabled suggestion of people' do
+    person = create_user('person').person
+    suggested_person = fast_create(Person)
+    disabled_suggested_person = fast_create(Person)
+
+    enabled_suggestion = ProfileSuggestion.create(:person => person, :suggestion => suggested_person)
+    disabled_suggestion = ProfileSuggestion.create(:person => person, :suggestion => disabled_suggested_person, :enabled => false)
+
+    assert_equal [suggested_person], person.suggested_people
+  end
+
+  should 'not suggest disabled suggestion of communities' do
+    person = create_user('person').person
+    suggested_community = fast_create(Community)
+    disabled_suggested_community = fast_create(Community)
+
+    enabled_suggestion = ProfileSuggestion.create(:person => person, :suggestion => suggested_community)
+    disabled_suggestion = ProfileSuggestion.create(:person => person, :suggestion => disabled_suggested_community, :enabled => false)
+
+    assert_equal [suggested_community], person.suggested_communities
+  end
+
+  should 'disable friend suggestion' do
+    person = create_user('person').person
+    suggested_person = fast_create(Person)
+
+    suggestion = ProfileSuggestion.create(:person => person, :suggestion => suggested_person)
+
+    assert_difference 'person.suggested_people.count', -1 do
+      person.remove_suggestion(suggested_person)
+    end
+  end
+
+  should 'disable community suggestion' do
+    person = create_user('person').person
+    suggested_community = fast_create(Community)
+
+    suggestion = ProfileSuggestion.create(:person => person, :suggestion => suggested_community)
+
+    assert_difference 'person.suggested_communities.count', -1 do
+      person.remove_suggestion(suggested_community)
+    end
+  end
+
+  should 'return url to people suggestions for a person' do
+    environment = create_environment('mycolivre.net')
+    profile = build(Person, :identifier => 'testprofile', :environment_id => create_environment('mycolivre.net').id)
+    assert_equal({ :host => "mycolivre.net", :profile => 'testprofile', :controller => 'friends', :action => 'suggest' }, profile.people_suggestions_url)
+  end
+
+  should 'return url to communities suggestions for a person' do
+    environment = create_environment('mycolivre.net')
+    profile = build(Person, :identifier => 'testprofile', :environment_id => create_environment('mycolivre.net').id)
+    assert_equal({ :host => "mycolivre.net", :profile => 'testprofile', :controller => 'memberships', :action => 'suggest' }, profile.communities_suggestions_url)
+  end
+
+  should 'allow homepage change if user is an environment admin' do
+    person = create_user('person').person
+    person.environment.expects(:enabled?).with('cant_change_homepage').returns(true)
+    person.expects(:is_admin?).returns(true)
+    assert person.can_change_homepage?
+  end
+
+  should 'allow homepage change if environment feature permit it' do
+    person = create_user('person').person
+    person.environment.expects(:enabled?).with('cant_change_homepage').returns(false)
+    assert person.can_change_homepage?
+  end
+
+  should 'follow? return false when no profile is passed as parameter' do
+    person = Person.new
+    assert_equal false, person.follows?(nil)
+  end
+
+  should 'vote in a comment with value greater than 1' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    person.vote(comment, 5)
+    assert_equal 1, person.vote_count
+    assert_equal 5, person.votes.first.vote
+    assert person.voted_on?(comment)
+  end
+
+  should 'vote in a comment with value lesser than -1' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    person.vote(comment, -5)
+    assert_equal 1, person.vote_count
+    assert_equal -5, person.votes.first.vote
+  end
+
+  should 'vote for a comment' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    assert !person.voted_for?(comment)
+    person.vote_for(comment)
+    assert person.voted_for?(comment)
+    assert !person.voted_against?(comment)
+  end
+
+  should 'vote against a comment' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    assert !person.voted_against?(comment)
+    person.vote_against(comment)
+    assert !person.voted_for?(comment)
+    assert person.voted_against?(comment)
+  end
+
+  should 'do not vote against a comment twice' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    assert person.vote_against(comment)
+    assert !person.vote_against(comment)
+  end
+
+  should 'do not vote for a comment twice' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    assert person.vote_for(comment)
+    assert !person.vote_for(comment)
+  end
+
+  should 'not vote against a voted for comment' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    person.vote_for(comment)
+    person.vote_against(comment)
+    assert person.voted_for?(comment)
+    assert !person.voted_against?(comment)
+  end
+
+  should 'not vote for a voted against comment' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    person.vote_against(comment)
+    person.vote_for(comment)
+    assert !person.voted_for?(comment)
+    assert person.voted_against?(comment)
+  end
+
+  should 'undo a vote for a comment' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    person.vote_for(comment)
+    assert person.voted_for?(comment)
+    person.votes.for_voteable(comment).destroy_all
+    assert !person.voted_for?(comment)
+  end
+
+  should 'count comments voted' do
+    comment = fast_create(Comment)
+    person = fast_create(Person)
+
+    comment2 = fast_create(Comment)
+    comment3 = fast_create(Comment)
+    person.vote_for(comment)
+    person.vote_for(comment2)
+    person.vote_against(comment3)
+    assert_equal 3, person.vote_count
+    assert_equal 2, person.vote_count(true)
+    assert_equal 1, person.vote_count(false)
+  end
+
+  should 'vote in a article with value greater than 1' do
+    article = fast_create(Article)
+    person = fast_create(Person)
+
+    person.vote(article, 5)
+    assert_equal 1, person.vote_count
+    assert_equal 5, person.votes.first.vote
+    assert person.voted_on?(article)
+  end
+
+  should 'vote for a article' do
+    article = fast_create(Article)
+    person = fast_create(Person)
+
+    assert !person.voted_for?(article)
+    person.vote_for(article)
+    assert person.voted_for?(article)
+    assert !person.voted_against?(article)
+  end
+
+  should 'vote against a article' do
+    article = fast_create(Article)
+    person = fast_create(Person)
+
+    assert !person.voted_against?(article)
+    person.vote_against(article)
+    assert !person.voted_for?(article)
+    assert person.voted_against?(article)
+  end
+
 end

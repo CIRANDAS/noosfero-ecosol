@@ -2,7 +2,6 @@ require_dependency 'application_helper'
 
 module ApplicationHelper
 
-  extend ActiveSupport::Concern
   protected
 
   module ResponsiveMethods
@@ -14,9 +13,8 @@ module ApplicationHelper
       option = html_options.delete(:option) || 'default'
       size = html_options.delete(:size) || 'xs'
       the_class = "with-text btn btn-#{size} btn-#{option} icon-#{type}"
-      if html_options.has_key?(:class)
-        the_class << ' ' << html_options[:class]
-      end
+      the_class << ' ' << html_options[:class] if html_options.has_key?(:class)
+
       #button_without_text type, label, url, html_options.merge(:class => the_class)
       the_title = html_options[:title] || label
       if html_options[:disabled]
@@ -250,6 +248,8 @@ module ApplicationHelper
       #control_panel link
       output += '<li>' + link_to('<i class="icon-menu-ctrl-panel"></i><strong>' + _('Control panel') + '</strong>', user.admin_url, class: 'ctrl-panel', title: _("Configure your personal account and content")) + '</li>'
 
+      output += chat_user_status_menu('icon-menu-offline', _('Offline'))
+
       #manage_enterprises
       manage_enterprises_str = manage_enterprises
       output += manage_enterprises_str.present? ? '<li>' + manage_enterprises_str + '</li>' : ''
@@ -376,9 +376,7 @@ module ApplicationHelper
   end
 
   include ResponsiveChecks
-  included do
-    include ResponsiveMethods
-  end
+  prepend ResponsiveMethods
 
   # TODO: apply theme_responsive? condition
   class NoosferoFormBuilder
@@ -406,11 +404,11 @@ module ApplicationHelper
       end
 
       if options[:horizontal]
-        label_html = content_tag('label', gettext(text), class: 'control-label col-sm-3 col-md-2 col-lg-2', for: field_id)
-        result = content_tag('div', label_html + content_tag('div',field_html, class: 'col-sm-9 col-md-6 col-lg-6'), class: 'form-group' )
+        label_html = content_tag :label, gettext(text), class: 'control-label col-sm-3 col-md-2 col-lg-2', for: field_id
+        result = content_tag :div, label_html + content_tag('div',field_html, class: 'col-sm-9 col-md-6 col-lg-6'), class: 'form-group'
       else
-        label_html = content_tag('label', gettext(text), class: 'control-label', for: field_id)
-        result = content_tag('div', label_html + field_html, class: 'form-group' )
+        label_html = content_tag :label, gettext(text), class: 'control-label', for: field_id
+        result = content_tag :div, label_html + field_html, class: 'form-group'
       end
 
       result

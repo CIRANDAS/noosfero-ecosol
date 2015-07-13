@@ -16,13 +16,13 @@ class CreateEnterprise < Task
     settings_items field.to_sym
   end
 
-  # checks for virtual attributes 
+  # checks for virtual attributes
   validates_presence_of :name, :identifier
 
   #checks if the validation method is region to validates
   validates_presence_of :region_id, :if => lambda { |obj| obj.environment.organization_approval_method == :region }
 
-  validates_format_of :foundation_year, :with => /^\d*$/
+  validates_numericality_of :foundation_year, only_integer: true, allow_nil: true
 
   # checks for actual attributes
   validates_presence_of :requestor_id, :target_id
@@ -73,7 +73,13 @@ class CreateEnterprise < Task
 
   # sets the associated region for the enterprise creation
   def region=(value)
-    raise ArgumentError.new("Region expected, but got #{value.class}") unless value.kind_of?(Region)
+    unless value.kind_of?(Region)
+      begin
+        value = Region.find(value)
+      rescue
+        raise ArgumentError.new("Could not find any region with the id #{value}")
+      end
+    end
 
     @region = value
     self.region_id = value.id
@@ -121,7 +127,7 @@ class CreateEnterprise < Task
     finish
   end
 
-  # tells if this request was appoved 
+  # tells if this request was appoved
   def approved?
     self.status == Task::Status::FINISHED
   end
@@ -135,7 +141,6 @@ class CreateEnterprise < Task
     end
 
     enterprise.environment = environment
-
     enterprise.user = self.requestor.user
 
     enterprise.save!

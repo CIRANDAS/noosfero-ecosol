@@ -1,18 +1,25 @@
-<div class='search-form'>
 
+<div class='search-form'>
   <%= form_tag( { :controller => 'search', :action => @asset ? @asset : 'index', :asset => nil, :category_path => ( @category ? @category.path : nil ) },
                  :method => 'get', :class => 'search_form' ) do %>
+    <div id='search-header'>
+      <h1><%= _('Searches') %></h1>
+      <%= assets_menu(@asset) %>
+      <%= filters(@asset) %>
+      <div class="clear"></div>
+    </div>
 
-    <%= hidden_field_tag :display, params[:display] %>
-    <%= hidden_field_tag :filter, params[:filter] %>
+    <div id='search-subheader'>
+      <%= assets_submenu(@asset) %>
+    </div>
 
-    <div class="search-field">
-      <span class="formfield">
-        <%= text_field_tag 'query', @query, :id => 'search-input', :size => 50 %>
-        <%= javascript_tag "jQuery('#search-input').attr('title', \"#{hint}\").hint()" if defined?(hint) %>
-      </span>
-
-      <%= submit_button(:search, _('Search')) %>
+    <div id='search-box' class="search-field form-group">
+      <div class="formfield input-group">
+        <%= search_input_with_suggestions('query', @asset, @query, {:id => 'search-input', :size => 50, :placeholder => hint}) %>
+        <span class="input-group-btn">
+          <%= submit_button :search, _('Search'), size: 'default' %>
+        </span>
+      </div>
     </div>
 
     <%= render :partial => 'search_form_extra_fields' %>

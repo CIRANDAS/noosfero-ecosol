@@ -3,10 +3,12 @@ class Organization < Profile
 
   attr_accessible :moderated_articles, :foundation_year, :contact_person, :acronym, :legal_form, :economic_activity, :management_information, :cnpj, :display_name, :enable_contact_us
 
-  SEARCH_FILTERS += %w[
-    more_popular
-  ]
-    #more_active
+  SEARCH_FILTERS = {
+    :order => %w[more_recent],
+    #:order => %w[more_recent more_popular more_active],
+    :display => %w[compact]
+  }
+
 
   settings_items :closed, :type => :boolean, :default => false
   def closed?
@@ -28,9 +30,15 @@ class Organization < Profile
 
   has_many :mailings, :class_name => 'OrganizationMailing', :foreign_key => :source_id, :as => 'source'
 
+  has_many :custom_roles, :class_name => 'Role', :foreign_key => :profile_id
+
   scope :more_popular, :order => 'members_count DESC'
 
   validate :presence_of_required_fieds, :unless => :is_template
+
+  def self.notify_activity tracked_action
+    Delayed::Job.enqueue NotifyActivityToProfilesJob.new(tracked_action.id)
+  end
 
   def presence_of_required_fieds
     self.required_fields.each do |field|
@@ -53,7 +61,7 @@ class Organization < Profile
   end
 
   def find_pending_validation(code)
-    validations.pending.find(:first, :conditions => {:code => code})
+    validations.pending.where(code: code).first
   end
 
   def processed_validations
@@ -61,7 +69,7 @@ class Organization < Profile
   end
 
   def find_processed_validation(code)
-    validations.finished.find(:first, :conditions => {:code => code})
+    validations.finished.where(code: code).first
   end
 
   def is_validation_entity?
@@ -110,7 +118,7 @@ class Organization < Profile
 
   settings_items :zip_code, :city, :state, :country
 
-  validates_format_of :foundation_year, :with => Noosfero::Constants::INTEGER_FORMAT
+  validates_numericality_of :foundation_year, only_integer: true, allow_nil: true
   validates_format_of :contact_email, :with => Noosfero::Constants::EMAIL_FORMAT, :if => (lambda { |org| !org.contact_email.blank? })
   validates_as_cnpj :cnpj
 
@@ -145,6 +153,12 @@ class Organization < Profile
     ]
   end
 
+  def short_name chars = 40
+    s = self.display_name
+    s = super(chars) if s.blank?
+    s
+  end
+
   def notification_emails
     emails = [contact_email].select(&:present?) + admins.map(&:email)
     if emails.empty?
@@ -154,7 +168,7 @@ class Organization < Profile
   end
 
   def already_request_membership?(person)
-    self.tasks.pending.find_by_requestor_id(person.id, :conditions => { :type => 'AddMember' })
+    self.tasks.pending.where(type: 'AddMember', requestor_id: person.id).first
   end
 
   def jid(options = {})
@@ -177,4 +191,13 @@ class Organization < Profile
     self.visible = false
     save!
   end
+
+  def allow_invitation_from?(person)
+    (followed_by?(person) && self.allow_members_to_invite) || person.has_permission?('invite-members', self)
+  end
+
+  def is_admin?(user)
+    self.admins.where(:id => user.id).exists?
+  end
+
 end

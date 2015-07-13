@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class UserMailerTest < ActiveSupport::TestCase
   FIXTURES_PATH = File.dirname(__FILE__) + '/../fixtures'
@@ -16,6 +16,14 @@ class UserMailerTest < ActiveSupport::TestCase
       u = create_user('some-user')
       UserMailer.activation_email_notify(u).deliver
     end
+  end
+
+  should 'deliver profiles suggestions email' do
+    person = create_user('some-user').person
+    ProfileSuggestion.create!(:person => person, :suggestion =>
+fast_create(Person))
+    email = UserMailer.profiles_suggestions_email(person).deliver
+    assert_match /profile\/some-user\/friends\/suggest/, email.body.to_s
   end
 
   private

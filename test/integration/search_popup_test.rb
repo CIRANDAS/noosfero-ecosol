@@ -1,6 +1,6 @@
-require "#{File.dirname(__FILE__)}/../test_helper"
+require_relative "../test_helper"
 
-class SearchPopupTest < ActionController::IntegrationTest
+class SearchPopupTest < ActionDispatch::IntegrationTest
 
   def setup
     HomeController.any_instance.stubs(:get_layout).returns('application')

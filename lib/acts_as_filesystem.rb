@@ -34,16 +34,15 @@ module ActsAsFileSystem
 
     def build_ancestry(parent_id = nil, ancestry = '')
       ActiveRecord::Base.transaction do
-        self.base_class.all(:conditions => {:parent_id => parent_id}).each do |node|
-          node.ancestry = ancestry
-          node.send :create_or_update_without_callbacks
+        self.base_class.where(parent_id: parent_id).each do |node|
+          node.update_column :ancestry, ancestry
 
           build_ancestry node.id, (ancestry.empty? ? "#{node.formatted_ancestry_id}" :
                                    "#{ancestry}#{node.ancestry_sep}#{node.formatted_ancestry_id}")
         end
       end
 
-      #raise "Couldn't reach and set ancestry on every record" if self.base_class.count(:conditions => ['ancestry is null']) != 0
+      #raise "Couldn't reach and set ancestry on every record" if self.base_class.where('ancestry is null').count != 0
     end
 
     def has_path?
@@ -90,7 +89,7 @@ module ActsAsFileSystem
       ["#{self.ancestry_column} LIKE ?", "%#{self.formatted_ancestry_id}%"]
     end
     def descendents
-      self.class.scoped :conditions => descendents_options
+      self.class.where descendents_options
     end
 
     # calculates the level of the record in the records hierarchy. Top-level
@@ -148,7 +147,7 @@ module ActsAsFileSystem
         @hierarchy = []
 
         if !reload and !recalculate_path and ancestor_ids
-          objects = self.class.base_class.all(:conditions => {:id => ancestor_ids})
+          objects = self.class.base_class.where(id: ancestor_ids)
           ancestor_ids.each{ |id| @hierarchy << objects.find{ |t| t.id == id } }
           @hierarchy << self
         else
@@ -171,7 +170,7 @@ module ActsAsFileSystem
         result += current_level
         ids = current_level.select {|item| item.children_count > 0}.map(&:id)
         break if ids.empty?
-        current_level = self.class.base_class.find(:all, :conditions => { :parent_id => ids})
+        current_level = self.class.base_class.where(parent_id: ids)
       end
       block ||= (lambda { |x| x })
       result.map(&block)

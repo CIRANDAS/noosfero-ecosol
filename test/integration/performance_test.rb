@@ -1,7 +1,7 @@
-require "#{File.dirname(__FILE__)}/../test_helper"
+require_relative "../test_helper"
 require 'benchmark'
 
-class PerformanceTest < ActionController::IntegrationTest
+class PerformanceTest < ActionDispatch::IntegrationTest
 
   all_fixtures
 

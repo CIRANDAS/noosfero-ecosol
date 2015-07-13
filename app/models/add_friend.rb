@@ -4,7 +4,7 @@ class AddFriend < Task
 
   validates_presence_of :requestor_id, :target_id
 
-  validates_uniqueness_of :target_id, :scope => [ :requestor_id ]
+  validates_uniqueness_of :target_id, scope: [ :requestor_id, :status ], if: proc{ |t| t.status == Task::Status::ACTIVE }
 
   validates_length_of :group_for_person, :group_for_friend, :maximum => 150, :allow_nil => true
 
@@ -13,6 +13,11 @@ class AddFriend < Task
 
   alias :friend :target
   alias :friend= :target=
+
+  after_create do |task|
+    TaskMailer.invitation_notification(task).deliver unless task.friend
+    remove_from_suggestion_list(task)
+  end
 
   def perform
     target.add_friend(requestor, group_for_friend)
@@ -48,4 +53,8 @@ class AddFriend < Task
     {:type => :profile_image, :profile => requestor, :url => requestor.url}
   end
 
+  def remove_from_suggestion_list(task)
+    suggestion = task.requestor.suggested_profiles.find_by_suggestion_id task.target.id
+    suggestion.disable if suggestion
+  end
 end

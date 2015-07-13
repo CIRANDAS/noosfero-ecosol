@@ -20,6 +20,7 @@ Feature: edit article
     And I fill in "Title" with "My Folder"
     And I press "Save"
     And I go to joaosilva's control panel
+    And I follow "Manage Content"
     Then I should see "My Folder"
 
   @selenium
@@ -41,10 +42,33 @@ Feature: edit article
     When I follow "Folder"
     And I fill in "Title" with "My Folder"
     And I choose "article_published_false"
+    And I uncheck "article_show_to_followers"
     And I press "Save"
     And I log off
     And I go to /freesoftware/my-folder
     Then I should see "Access denied"
+
+  @selenium
+  Scenario: Hide token field when show to members is activated
+    Given the following communities
+      | name           | identifier    | owner     |
+      | Free Software  | freesoftware  | joaosilva |
+    And the following users
+      | login | name        |
+      | mario | Mario Souto |
+      | maria | Maria Silva |
+    And "Mario Souto" is a member of "Free Software"
+    And "Maria Silva" is a member of "Free Software"
+    And I am on freesoftware's control panel
+    And I follow "Manage Content"
+    And I should see "New content"
+    And I follow "New content"
+    And I should see "Folder"
+    When I follow "Folder"
+    And I fill in "Title" with "My Folder"
+    And I choose "article_published_false"
+    And I check "article_show_to_followers"
+    Then I should not see "Fill in the search"
 
   @selenium
   Scenario: show exception users field when you choose the private option
@@ -65,6 +89,7 @@ Feature: edit article
     When I follow "Folder"
     And I fill in "Title" with "My Folder"
     And I choose "article_published_false"
+    And I uncheck "article_show_to_followers"
     Then I should see "Fill in the search field to add the exception users to see this content"
 
   @selenium
@@ -228,6 +253,7 @@ Feature: edit article
   Scenario: add a translation to an article
     Given I am on joaosilva's sitemap
     And I follow "Save the whales"
+    And the following languages "en es" are available on environment
     Then I should not see "Add translation"
     And I follow "Edit"
     And I select "English" from "Language"
@@ -245,6 +271,7 @@ Feature: edit article
       | owner     | name               | language |
       | joaosilva | Article in English | en       |
     And I am on joaosilva's sitemap
+    And the following languages "en pt" are available on environment
     When I follow "Article in English"
     And I follow "Add translation"
     And I fill in "Title" with "Article in Portuguese"

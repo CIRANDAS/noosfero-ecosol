@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../../../../test/test_helper'
+require 'test_helper'
 
 class GoogleAnalyticsPluginTest < ActiveSupport::TestCase
 
@@ -25,11 +25,6 @@ class GoogleAnalyticsPluginTest < ActiveSupport::TestCase
   should 'add content at HTML head if profile_id not nil' do
     @plugin.expects(:expanded_template).once.returns('content')
     assert_equal 'content', @plugin.head_ending
-  end
-
-  should 'add extra fields to profile editor info and settings' do
-    assert_tag_in_string @plugin.profile_editor_extras,
-      :tag => 'input', :attributes => {:id => 'profile_data_google_analytics_profile_id', :value => 10}
   end
 
   should 'extends Profile with attr google_analytics_profile_id' do

@@ -7,15 +7,15 @@ class Box < ActiveRecord::Base
 
   include Noosfero::Plugin::HotSpot
 
-  scope :with_position, :conditions => ['boxes.position > 0']
+  scope :with_position, -> { where 'boxes.position > 0' }
 
   def environment
     owner ? (owner.kind_of?(Environment) ? owner : owner.environment) : nil
   end
 
   def acceptable_blocks
-    blocks_classes = central?  ? Box.acceptable_center_blocks + plugins.dispatch(:extra_blocks, :type => owner.class, :position => 1) : Box.acceptable_side_blocks + plugins.dispatch(:extra_blocks, :type => owner.class, :position => [2, 3])
-    to_css_selector(blocks_classes)
+    blocks_classes = if central? then Box.acceptable_center_blocks + plugins_extra_blocks(:type => owner.class, :position => 1) else Box.acceptable_side_blocks + plugins_extra_blocks(:type => owner.class, :position => [2, 3]) end
+    to_css_selector blocks_classes
   end
 
   def central?

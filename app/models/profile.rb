@@ -3,7 +3,9 @@
 # which by default is the one returned by Environment:default.
 class Profile < ActiveRecord::Base
 
-  attr_accessible :name, :identifier, :public_profile, :nickname, :custom_footer, :custom_header, :address, :zip_code, :contact_phone, :image_builder, :description, :closed, :template_id, :environment, :lat, :lng, :is_template, :fields_privacy, :preferred_domain_id, :category_ids, :country, :city, :state, :national_region_code, :email, :contact_email, :redirect_l10n, :notification_time, :redirection_after_login
+  attr_accessible :name, :identifier, :public_profile, :nickname, :custom_footer, :custom_header, :address, :zip_code, :contact_phone, :image_builder, :description, :closed, :template_id, :environment, :lat, :lng, :is_template, :fields_privacy, :preferred_domain_id, :category_ids, :country, :city, :state, :national_region_code, :email, :contact_email, :redirect_l10n, :notification_time,
+    :redirection_after_login, :custom_url_redirection,
+    :email_suggestions, :allow_members_to_invite, :invite_friends_only, :secret
 
   # use for internationalizable human type names in search facets
   # reimplement on subclasses
@@ -12,16 +14,17 @@ class Profile < ActiveRecord::Base
   end
 
   SEARCHABLE_FIELDS = {
-    :name => 10,
-    :identifier => 5,
-    :nickname => 2,
+    :name => {:label => _('Name'), :weight => 10},
+    :identifier => {:label => _('Username'), :weight => 5},
+    :nickname => {:label => _('Nickname'), :weight => 2},
   }
 
-  SEARCH_FILTERS = %w[
-    more_recent
-  ]
+  SEARCH_FILTERS = {
+    :order => %w[more_recent],
+    :display => %w[compact]
+  }
 
-  SEARCH_DISPLAYS = %w[compact]
+  NUMBER_OF_BOXES = 4
 
   def self.default_search_display
     'compact'
@@ -44,10 +47,10 @@ class Profile < ActiveRecord::Base
       find_role('editor', env_id)
     end
     def self.organization_member_roles(env_id)
-      all_roles(env_id).select{ |r| r.key.match(/^profile_/) unless r.key.blank? }
+      all_roles(env_id).select{ |r| r.key.match(/^profile_/) unless r.key.blank? || !r.profile_id.nil?}
     end
     def self.all_roles(env_id)
-      Role.all :conditions => { :environment_id => env_id }
+      Role.where(environment_id: env_id)
     end
     def self.method_missing(m, *args, &block)
       role = find_role(m, args[0])
@@ -70,24 +73,42 @@ class Profile < ActiveRecord::Base
     'manage_friends'       => N_('Manage friends'),
     'validate_enterprise'  => N_('Validate enterprise'),
     'perform_task'         => N_('Perform task'),
+    'view_tasks'           => N_('View tasks'),
     'moderate_comments'    => N_('Moderate comments'),
     'edit_appearance'      => N_('Edit appearance'),
     'view_private_content' => N_('View private content'),
     'publish_content'      => N_('Publish content'),
     'invite_members'       => N_('Invite members'),
     'send_mail_to_members' => N_('Send e-Mail to members'),
+    'manage_custom_roles'  => N_('Manage custom roles'),
   }
 
   acts_as_accessible
 
   include Noosfero::Plugin::HotSpot
 
-  scope :memberships_of, lambda { |person| { :select => 'DISTINCT profiles.*', :joins => :role_assignments, :conditions => ['role_assignments.accessor_type = ? AND role_assignments.accessor_id = ?', person.class.base_class.name, person.id ] } }
+  scope :memberships_of, -> (person) {
+    select('DISTINCT profiles.*').
+    joins(:role_assignments).
+    where('role_assignments.accessor_type = ? AND role_assignments.accessor_id = ?', person.class.base_class.name, person.id)
+  }
   #FIXME: these will work only if the subclass is already loaded
-  scope :enterprises, lambda { {:conditions => (Enterprise.send(:subclasses).map(&:name) << 'Enterprise').map { |klass| "profiles.type = '#{klass}'"}.join(" OR ")} }
-  scope :communities, lambda { {:conditions => (Community.send(:subclasses).map(&:name) << 'Community').map { |klass| "profiles.type = '#{klass}'"}.join(" OR ")} }
-  scope :templates, {:conditions => {:is_template => true}}
-  scope :no_templates, {:conditions => {:is_template => false}}
+  scope :enterprises, -> {
+    where((Enterprise.send(:subclasses).map(&:name) << 'Enterprise').map { |klass| "profiles.type = '#{klass}'"}.join(" OR "))
+  }
+  scope :communities, -> {
+    where((Community.send(:subclasses).map(&:name) << 'Community').map { |klass| "profiles.type = '#{klass}'"}.join(" OR "))
+  }
+  scope :templates, -> (template_id = nil) {
+    s = where is_template: true
+    s = s.where id: template_id if template_id
+    s
+  }
+
+  scope :with_templates, -> (templates) {
+    where template_id: templates
+  }
+  scope :no_templates, -> { where is_template: false }
 
   def members
     scopes = plugins.dispatch_scopes(:organization_members, self)
@@ -108,8 +129,8 @@ class Profile < ActiveRecord::Base
     alias_method_chain :count, :distinct
   end
 
-  def members_by_role(role)
-    Person.members_of(self).all(:conditions => ['role_assignments.role_id = ?', role.id])
+  def members_by_role(roles)
+    Person.members_of(self).by_role(roles)
   end
 
   acts_as_having_boxes
@@ -120,11 +141,12 @@ class Profile < ActiveRecord::Base
     Profile.column_names.map{|n| [Profile.table_name, n].join('.')}.join(',')
   end
 
-  scope :public, :conditions => { :visible => true, :public_profile => true }
-  scope :visible, :conditions => { :visible => true }
-  scope :invisible, :conditions => ['profiles.visible <> ?', true]
-  scope :enabled, :conditions => { :enabled => true }
-  scope :disabled, :conditions => ['profiles.enabled <> ?', true]
+  scope :visible, -> { where visible: true, secret: false }
+  scope :invisible, -> { where 'profiles.visible <> ?', true }
+  scope :is_public, -> { where visible: true, public_profile: true, secret: false }
+
+  scope :enabled, -> { where enabled: true }
+  scope :disabled, -> { where 'profiles.enabled <> ?', true }
 
   # Subclasses must override this method
   scope :more_popular
@@ -134,12 +156,24 @@ class Profile < ActiveRecord::Base
 
   acts_as_trackable :dependent => :destroy
 
+  has_many :profile_activities
   has_many :action_tracker_notifications, :foreign_key => 'profile_id'
   has_many :tracked_notifications, :through => :action_tracker_notifications, :source => :action_tracker, :order => 'updated_at DESC'
   has_many :scraps_received, :class_name => 'Scrap', :foreign_key => :receiver_id, :order => "updated_at DESC", :dependent => :destroy
   belongs_to :template, :class_name => 'Profile', :foreign_key => 'template_id'
 
   has_many :comments_received, :class_name => 'Comment', :through => :articles, :source => :comments
+
+  # Although this should be a has_one relation, there are no non-silly names for
+  # a foreign key on article to reference the template to which it is
+  # welcome_page... =P
+  belongs_to :welcome_page, :class_name => 'Article', :dependent => :destroy
+
+  def welcome_page_content
+    welcome_page && welcome_page.published ? welcome_page.body : nil
+  end
+
+  has_many :search_terms, :as => :context
 
   def scraps(scrap=nil)
     scrap = scrap.is_a?(Scrap) ? scrap.id : scrap
@@ -156,11 +190,12 @@ class Profile < ActiveRecord::Base
   settings_items :public_content, :type => :boolean, :default => true
   settings_items :description
   settings_items :fields_privacy, :type => :hash, :default => {}
+  settings_items :email_suggestions, :type => :boolean, :default => false
 
   validates_length_of :description, :maximum => 550, :allow_nil => true
 
   # Valid identifiers must match this format.
-  IDENTIFIER_FORMAT = /^#{Noosfero.identifier_format}$/
+  IDENTIFIER_FORMAT = /\A#{Noosfero.identifier_format}\Z/
 
   # These names cannot be used as identifiers for Profiles
   RESERVED_IDENTIFIERS = %w[
@@ -214,13 +249,15 @@ class Profile < ActiveRecord::Base
     end
   end
 
-  has_many :profile_categorizations, :conditions => [ 'categories_profiles.virtual = ?', false ]
-  has_many :categories, :through => :profile_categorizations, :conditions => ['categories.visible_for_profiles = ?', true]
+  has_many :profile_categorizations, -> { where 'categories_profiles.virtual = ?', false }
+  has_many :categories, -> { where 'categories.visible_for_profiles = ?', true }, through: :profile_categorizations
 
   has_many :profile_categorizations_including_virtual, :class_name => 'ProfileCategorization'
   has_many :categories_including_virtual, :through => :profile_categorizations_including_virtual, :source => :category
 
   has_many :abuse_complaints, :foreign_key => 'requestor_id', :dependent => :destroy
+
+  has_many :profile_suggestions, :foreign_key => :suggestion_id, :dependent => :destroy
 
   def top_level_categorization
     ret = {}
@@ -299,16 +336,25 @@ class Profile < ActiveRecord::Base
     @top_level_articles ||= Article.top_level_for(self)
   end
 
-  def self.is_available?(identifier, environment)
-    !(identifier =~ IDENTIFIER_FORMAT).nil? && !RESERVED_IDENTIFIERS.include?(identifier) && Profile.find(:first, :conditions => ['environment_id = ? and identifier = ?', environment.id, identifier]).nil?
+  def self.is_available?(identifier, environment, profile_id=nil)
+    return false unless identifier =~ IDENTIFIER_FORMAT &&
+      !RESERVED_IDENTIFIERS.include?(identifier) &&
+      (NOOSFERO_CONF['exclude_profile_identifier_pattern'].blank? || identifier !~ /#{NOOSFERO_CONF['exclude_profile_identifier_pattern']}/)
+    return true if environment.nil?
+
+    profiles = environment.profiles.where(:identifier => identifier)
+    profiles = profiles.where(['id != ?', profile_id]) if profile_id.present?
+    !profiles.exists?
   end
 
   validates_presence_of :identifier, :name
-  validates_format_of :identifier, :with => IDENTIFIER_FORMAT, :if => lambda { |profile| !profile.identifier.blank? }
-  validates_exclusion_of :identifier, :in => RESERVED_IDENTIFIERS
-  validates_uniqueness_of :identifier, :scope => :environment_id
   validates_length_of :nickname, :maximum => 40, :allow_nil => true
   validate :valid_template
+  validate :valid_identifier
+
+  def valid_identifier
+    errors.add(:identifier, _('is not available.')) unless Profile.is_available?(identifier, environment, id)
+  end
 
   def valid_template
     if template_id.present? && template && !template.is_template
@@ -334,7 +380,7 @@ class Profile < ActiveRecord::Base
     if template
       apply_template(template, :copy_articles => false)
     else
-      3.times do
+      NUMBER_OF_BOXES.times do
         self.boxes << Box.new
       end
 
@@ -362,6 +408,9 @@ class Profile < ActiveRecord::Base
         new_block = block.class.new(:title => block[:title])
         new_block.copy_from(block)
         new_box.blocks << new_block
+        if block.mirror?
+          block.add_observer(new_block)
+        end
       end
     end
   end
@@ -377,6 +426,7 @@ class Profile < ActiveRecord::Base
   alias_method_chain :template, :default
 
   def apply_template(template, options = {:copy_articles => true})
+    self.template = template
     copy_blocks_from(template)
     copy_articles_from(template) if options[:copy_articles]
     self.apply_type_specific_template(template)
@@ -426,14 +476,13 @@ class Profile < ActiveRecord::Base
     self.articles.recent(limit, options, pagination)
   end
 
-  def last_articles(limit = 10, options = {})
-    options = { :limit => limit,
-                :conditions => ["advertise = ? AND published = ? AND
-                                 ((articles.type != ? and articles.type != ? and articles.type != ?) OR
-                                 articles.type is NULL)",
-                                 true, true, 'UploadedFile', 'RssFeed', 'Blog'],
-                :order => 'articles.published_at desc, articles.id desc' }.merge(options)
-    self.articles.find(:all, options)
+  def last_articles limit = 10
+    self.articles.limit(limit).where(
+      "advertise = ? AND published = ? AND
+      ((articles.type != ? and articles.type != ? and articles.type != ?) OR
+      articles.type is NULL)",
+      true, true, 'UploadedFile', 'RssFeed', 'Blog'
+    ).order('articles.published_at desc, articles.id desc')
   end
 
   class << self
@@ -515,6 +564,14 @@ class Profile < ActiveRecord::Base
 
   def public_profile_url
     generate_url(:profile => identifier, :controller => 'profile', :action => 'index')
+  end
+
+  def people_suggestions_url
+    generate_url(:profile => identifier, :controller => 'friends', :action => 'suggest')
+  end
+
+  def communities_suggestions_url
+    generate_url(:profile => identifier, :controller => 'memberships', :action => 'suggest')
   end
 
   def generate_url(options)
@@ -611,7 +668,7 @@ private :generate_url, :url_options
   end
 
   def copy_article_tree(article, parent=nil)
-    return if article.is_a?(RssFeed)
+    return if !copy_article?(article)
     original_article = self.articles.find_by_name(article.name)
     if original_article
       num = 2
@@ -631,6 +688,11 @@ private :generate_url, :url_options
     end
   end
 
+  def copy_article?(article)
+    !article.is_a?(RssFeed) &&
+    !(is_template && article.slug=='welcome-page')
+  end
+
   # Adds a person as member of this Profile.
   def add_member(person)
     if self.has_members?
@@ -640,6 +702,8 @@ private :generate_url, :url_options
         self.affiliate(person, Profile::Roles.admin(environment.id)) if members.count == 0
         self.affiliate(person, Profile::Roles.member(environment.id))
       end
+      person.tasks.pending.of("InviteMember").select { |t| t.data[:community_id] == self.id }.each { |invite| invite.cancel }
+      remove_from_suggestion_list person
     else
       raise _("%s can't have members") % self.class.name
     end
@@ -780,7 +844,10 @@ private :generate_url, :url_options
   end
 
   def admins
-    self.members_by_role(Profile::Roles.admin(environment.id))
+    return [] if environment.blank?
+    admin_role = Profile::Roles.admin(environment.id)
+    return [] if admin_role.blank?
+    self.members_by_role(admin_role)
   end
 
   def enable_contact?
@@ -912,6 +979,13 @@ private :generate_url, :url_options
   end
 
   def disable
+    self.visible = false
+    self.save
+  end
+
+  def enable
+    self.visible = true
+    self.save
   end
 
   def control_panel_settings_button
@@ -922,9 +996,13 @@ private :generate_url, :url_options
     name
   end
 
-  # Override in your subclasses
+  def exclude_verbs_on_activities
+    %w[]
+  end
+
+  # Customize in subclasses
   def activities
-    []
+    self.profile_activities.includes(:activity).order('updated_at DESC')
   end
 
   def may_display_field_to? field, user = nil
@@ -971,4 +1049,15 @@ private :generate_url, :url_options
   def preferred_login_redirection
     redirection_after_login.blank? ? environment.redirection_after_login : redirection_after_login
   end
+  settings_items :custom_url_redirection, type: String, default: nil
+
+  def remove_from_suggestion_list(person)
+    suggestion = person.suggested_profiles.find_by_suggestion_id self.id
+    suggestion.disable if suggestion
+  end
+
+  def allow_invitation_from(person)
+    false
+  end
+
 end

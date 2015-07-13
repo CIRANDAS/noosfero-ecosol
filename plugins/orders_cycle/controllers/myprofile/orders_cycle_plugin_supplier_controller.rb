@@ -9,7 +9,7 @@ class OrdersCyclePluginSupplierController < SuppliersPluginMyprofileController
   protect 'edit_profile', :profile
 
   helper OrdersCyclePlugin::TranslationHelper
-  helper OrdersCyclePlugin::OrdersCycleDisplayHelper
+  helper OrdersCyclePlugin::DisplayHelper
 
   def margin_change
     super
@@ -18,7 +18,7 @@ class OrdersCyclePluginSupplierController < SuppliersPluginMyprofileController
 
   protected
 
-  extend ControllerInheritance::ClassMethods
+  extend HMVC::ClassMethods
   hmvc OrdersCyclePlugin, orders_context: OrdersCyclePlugin
 
 end

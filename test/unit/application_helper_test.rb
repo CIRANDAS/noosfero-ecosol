@@ -1,5 +1,5 @@
 # encoding: UTF-8
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class ApplicationHelperTest < ActionView::TestCase
 
@@ -254,6 +254,44 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
+  should 'define the community default template as checked' do
+    environment = Environment.default
+    self.stubs(:environment).returns(environment)
+    community = fast_create(Community, :is_template => true, :environment_id => environment.id)
+    fast_create(Community, :is_template => true, :environment_id => environment.id)
+    environment.community_default_template= community
+    environment.save
+
+    assert_tag_in_string template_options(:communities, 'community'), :tag => 'input',
+                                 :attributes => { :name => "community[template_id]", :value => community.id, :checked => true }
+  end
+
+  should 'define the person default template as checked' do
+    environment = Environment.default
+    self.stubs(:environment).returns(environment)
+    person = fast_create(Person, :is_template => true, :environment_id => environment.id)
+    fast_create(Person, :is_template => true, :environment_id => environment.id)
+    environment.person_default_template= person
+    environment.save
+
+    assert_tag_in_string template_options(:people, 'profile_data'), :tag => 'input',
+                                 :attributes => { :name => "profile_data[template_id]", :value => person.id, :checked => true }
+  end
+
+  should 'define the enterprise default template as checked' do
+    environment = Environment.default
+    self.stubs(:environment).returns(environment)
+    enterprise = fast_create(Enterprise, :is_template => true, :environment_id => environment.id)
+    fast_create(Enterprise, :is_template => true, :environment_id => environment.id)
+
+    environment.enterprise_default_template= enterprise
+    environment.save
+    environment.reload
+
+    assert_tag_in_string template_options(:enterprises, 'create_enterprise'), :tag => 'input',
+                                 :attributes => { :name => "create_enterprise[template_id]", :value => enterprise.id, :checked => true }
+  end
+
   should 'return nil if disable_categories is enabled' do
     env = fast_create(Environment, :name => 'env test')
     stubs(:environment).returns(env)
@@ -320,6 +358,23 @@ class ApplicationHelperTest < ActionView::TestCase
     enterprise = Enterprise.new
     enterprise.expects(:signup_fields).returns(['field'])
     assert_equal 'SIGNUP_FIELD', optional_field(enterprise, 'field', 'SIGNUP_FIELD')
+  end
+
+  should 'display field on home for a not logged user' do
+    env = create(Environment, :name => 'env test')
+    stubs(:environment).returns(env)
+
+    controller = mock
+    stubs(:controller).returns(controller)
+    controller.stubs(:controller_name).returns('home')
+    controller.stubs(:action_name).returns('index')
+
+    stubs(:user).returns(nil)
+
+
+    person = Person.new
+    person.expects(:signup_fields).returns(['field'])
+    assert_equal 'SIGNUP_FIELD', optional_field(person, 'field', 'SIGNUP_FIELD')
   end
 
   should 'display field on community creation' do
@@ -425,13 +480,13 @@ class ApplicationHelperTest < ActionView::TestCase
 
   should 'base theme uses default icon theme' do
     stubs(:current_theme).returns('base')
-    assert_equal "/designs/icons/default/style.css", icon_theme_stylesheet_path.first
+    assert_equal "designs/icons/default/style.css", icon_theme_stylesheet_path.first
   end
 
   should 'base theme uses config to specify more then an icon theme' do
     stubs(:current_theme).returns('base')
-    assert_includes icon_theme_stylesheet_path, "/designs/icons/default/style.css"
-    assert_includes icon_theme_stylesheet_path, "/designs/icons/pidgin/style.css"
+    assert_includes icon_theme_stylesheet_path, "designs/icons/default/style.css"
+    assert_includes icon_theme_stylesheet_path, "designs/icons/pidgin/style.css"
   end
 
   should 'not display active field if only required' do
@@ -509,18 +564,6 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal environment.theme, current_theme
   end
 
-  should 'trunc to 15 chars the big filename' do
-    assert_equal 'AGENDA(...).mp3', short_filename('AGENDA_CULTURA_-_FESTA_DE_VAQUEIROS_PONTO_DE_SERRA_PRETA_BAIXA.mp3',15)
-  end
-
-  should 'trunc to default limit the big filename' do
-    assert_equal 'AGENDA_CULTURA_-_FESTA_DE_VAQUEIRO(...).mp3', short_filename('AGENDA_CULTURA_-_FESTA_DE_VAQUEIROS_PONTO_DE_SERRA_PRETA_BAIXA.mp3')
-  end
-
-  should 'does not trunc short filename' do
-    assert_equal 'filename.mp3', short_filename('filename.mp3')
-  end
-
   should 'return nil when :show_balloon_with_profile_links_when_clicked is not enabled in environment' do
     env = Environment.default
     env.stubs(:enabled?).with(:show_balloon_with_profile_links_when_clicked).returns(false)
@@ -533,7 +576,7 @@ class ApplicationHelperTest < ActionView::TestCase
     env = Environment.default
     env.stubs(:enabled?).with(:show_balloon_with_profile_links_when_clicked).returns(true)
     stubs(:environment).returns(env)
-    person = Person.new
+    person = Person.new identifier: 'person'
     person.stubs(:url).returns('url for person')
     person.stubs(:public_profile_url).returns('url for person')
     links = links_for_balloon(person)
@@ -544,7 +587,7 @@ class ApplicationHelperTest < ActionView::TestCase
     env = Environment.default
     env.stubs(:enabled?).with(:show_balloon_with_profile_links_when_clicked).returns(true)
     stubs(:environment).returns(env)
-    community = Community.new
+    community = Community.new identifier: 'comm'
     community.stubs(:url).returns('url for community')
     community.stubs(:public_profile_url).returns('url for community')
     links = links_for_balloon(community)
@@ -555,7 +598,7 @@ class ApplicationHelperTest < ActionView::TestCase
     env = Environment.default
     env.stubs(:enabled?).with(:show_balloon_with_profile_links_when_clicked).returns(true)
     stubs(:environment).returns(env)
-    enterprise = Enterprise.new
+    enterprise = Enterprise.new identifier: 'coop'
     enterprise.stubs(:url).returns('url for enterprise')
     enterprise.stubs(:public_profile_url).returns('url for enterprise')
     stubs(:catalog_path)
@@ -596,21 +639,6 @@ class ApplicationHelperTest < ActionView::TestCase
     stubs(:profile).returns(fast_create(Profile, :theme => 'profile-theme'))
     File.expects(:exists?).with(Rails.root.join('public', theme_path, 'favicon.ico')).returns(false)
     assert_equal '/designs/themes/new-theme/favicon.ico', theme_favicon
-  end
-
-  should 'include item in usermenu for environment enabled features' do
-    env = fast_create(Environment)
-    env.enable('xmpp_chat', false)
-    stubs(:environment).returns(env)
-
-    @controller = ApplicationController.new
-    path = Rails.root.join('app', 'views')
-    @controller.stubs(:view_paths).returns([path])
-
-    file = path.join('shared','usermenu', 'xmpp_chat.html.erb')
-    expects(:render).with(:file => file, :use_full_path => false).returns('Open chat')
-
-    assert_equal 'Open chat', render_environment_features(:usermenu)
   end
 
   should 'not inlude administration link if user is not an environment administrator' do
@@ -711,16 +739,16 @@ class ApplicationHelperTest < ActionView::TestCase
       <div class='macro nonEdit' data-macro='unexistent' data-macro-param='987'></div>
     "
     parsed_html = convert_macro(html, mock())
-    parsed_divs = Nokogiri::HTML.fragment(parsed_html).search('div')
+    parsed_divs = Nokogiri::HTML.fragment(parsed_html).css('div')
     expected_divs = Nokogiri::HTML.fragment("
-      <div data-macro='#{macro1_name}' class='parsed-macro #{macro1_name}'>Test1</div>
-      <div data-macro='#{macro2_name}' class='parsed-macro #{macro2_name}'>Test2</div>
+      <div class='parsed-macro #{macro1_name}' data-macro='#{macro1_name}'>Test1</div>
+      <div class='parsed-macro #{macro2_name}' data-macro='#{macro2_name}'>Test2</div>
       <div data-macro='unexistent' class='failed-macro unexistent'>Unsupported macro unexistent!</div>
-    ").search('div')
+    ").css('div')
 
     # comparing div attributes between parsed and expected html
     parsed_divs.each_with_index do |div, i|
-      assert_equal expected_divs[i].attributes.to_hash, div.attributes.to_hash
+      assert_equal expected_divs[i].attributes.to_xml, div.attributes.to_xml
       assert_equal expected_divs[i].inner_text, div.inner_text
     end
   end
@@ -936,6 +964,62 @@ class ApplicationHelperTest < ActionView::TestCase
     stubs(:user).returns(profile)
     expects(:manage_link).with(profile.communities, :communities, _('My communities')).never
     assert_equal '', manage_communities
+  end
+
+  should 'include file from current theme out of a profile page' do
+    def profile; nil; end
+    def environment; e={}; def e.theme; 'env-theme'; end; e; end
+    def render(opt); opt; end
+    File.stubs(:exists?).returns(false)
+    file = Rails.root.join 'public/designs/themes/env-theme/somefile.html.erb'
+    assert_nil theme_include('somefile') # exists? = false
+    File.expects(:exists?).with(file).returns(true).at_least_once
+    assert_equal file, theme_include('somefile')[:file] # exists? = true
+  end
+
+  should 'include file from current theme inside a profile page' do
+    def profile; p={}; def p.theme; 'my-theme'; end; p; end
+    def render(opt); opt; end
+    File.stubs(:exists?).returns(false)
+    file = Rails.root.join 'public/designs/themes/my-theme/otherfile.html.erb'
+    assert_nil theme_include('otherfile') # exists? = false
+    File.expects(:exists?).with(file).returns(true).at_least_once
+    assert_equal file, theme_include('otherfile')[:file] # exists? = true
+  end
+
+  should 'include file from env theme' do
+    def profile; p={}; def p.theme; 'my-theme'; end; p; end
+    def environment; e={}; def e.theme; 'env-theme'; end; e; end
+    def render(opt); opt; end
+    File.stubs(:exists?).returns(false)
+    file = Rails.root.join 'public/designs/themes/env-theme/afile.html.erb'
+    assert_nil env_theme_include('afile') # exists? = false
+    File.expects(:exists?).with(file).returns(true).at_least_once
+    assert_equal file, env_theme_include('afile')[:file] # exists? = true
+  end
+
+  should 'include file from some theme' do
+    def render(opt); opt; end
+    File.stubs(:exists?).returns(false)
+    file = Rails.root.join 'public/designs/themes/atheme/afile.html.erb'
+    assert_nil from_theme_include('atheme', 'afile') # exists? = false
+    File.expects(:exists?).with(file).returns(true).at_least_once
+    assert_equal file, from_theme_include('atheme', 'afile')[:file] # exists? = true
+  end
+
+  should 'enable fullscreen buttons' do
+    html = fullscreen_buttons("#article")
+    assert html.include?("<script>fullscreenPageLoad('#article')</script>")
+    assert html.include?("class=\"button with-text icon-fullscreen\"")
+    assert html.include?("onClick=\"toggle_fullwidth('#article')\"")
+  end
+
+  should "return the related class string" do
+    assert_equal "Clone Folder", label_for_clone_article(Folder.new)
+    assert_equal "Clone Blog", label_for_clone_article(Blog.new)
+    assert_equal "Clone Event", label_for_clone_article(Event.new)
+    assert_equal "Clone Forum", label_for_clone_article(Forum.new)
+    assert_equal "Clone Article", label_for_clone_article(TinyMceArticle.new)
   end
 
   protected

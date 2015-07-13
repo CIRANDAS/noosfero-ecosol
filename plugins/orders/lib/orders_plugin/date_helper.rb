@@ -4,36 +4,26 @@ module OrdersPlugin::DateHelper
 
   include OrdersPlugin::FieldHelper
 
-  def labelled_period_fields form, start_field, end_field, options = {}
-    form.text_field("#{start_field}_date", class: 'date-select') +
-    form.text_field("#{start_field}_time", class: 'time-select') +
-    content_tag('span', '&nbsp' + I18n.t('orders_plugin.lib.date_helper.to') + '&nbsp', class: "date-to") +
-    form.text_field("#{end_field}_date", class: 'date-select') +
-    form.text_field("#{end_field}_time", class: 'time-select')
+  def date_range_field form, start_field, end_field, options = {}
+    start_time = form.object.send(start_field) || Time.now
+    end_time = form.object.send(end_field) || Time.now+1.week
+
+    render 'orders_plugin/shared/daterangepicker/form_field', form: form, options: options,
+      start_field: start_field, end_field: end_field, start_time: start_time, end_time: end_time
   end
 
-  def labelled_period_field form, start_field, end_field, label, options = {}
-    labelled_field form, label, label, labelled_period_fields(form, start_field, end_field, options)
+  def datetime_range_field form, start_field, end_field, options = {}
+    date_range_field form, start_field, end_field, timePicker: true, timePickerIncrement: 15, timePicker12Hour: false
   end
 
-  def datetime_period start, finish
-    I18n.t('orders_plugin.lib.date_helper.start_to_finish') % {
-     start: start.to_time.strftime(I18n.t('orders_plugin.lib.date_helper.m_d_y_at_hh_m')),
-     finish: finish.to_time.strftime(I18n.t('orders_plugin.lib.date_helper.m_d_y_at_hh_m')),
-    }
+  def labelled_datetime_range_field form, start_field, end_field, label, options = {}
+    labelled_field form, label, label, datetime_range_field(form, start_field, end_field, options)
   end
 
   def datetime_period_with_from start, finish
     I18n.t('orders_plugin.lib.date_helper.from_start_to_finish') % {
-     start: start.to_time.strftime(I18n.t('orders_plugin.lib.date_helper.m_d_y_hh_m')),
-     finish: finish.to_time.strftime(I18n.t('orders_plugin.lib.date_helper.m_d_y_hh_m')),
-    }
-  end
-
-  def date_period start, finish
-    I18n.t('orders_plugin.lib.date_helper.start_finish') % {
-     start: start.to_time.strftime(I18n.t('orders_plugin.lib.date_helper.m_d')),
-     finish: finish.to_time.strftime(I18n.t('orders_plugin.lib.date_helper.m_d')),
+     start: start.strftime(I18n.t('orders_plugin.lib.date_helper.m_d_y_hh_m')),
+     finish: finish.strftime(I18n.t('orders_plugin.lib.date_helper.m_d_y_hh_m')),
     }
   end
 

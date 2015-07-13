@@ -8,7 +8,7 @@ class FbAppPluginPageTabController < FbAppPluginController
   include CatalogHelper
 
   helper ManageProductsHelper
-  helper FbAppPlugin::FbAppDisplayHelper
+  helper FbAppPlugin::DisplayHelper
 
   def index
     return unless load_page_tabs
@@ -34,7 +34,7 @@ class FbAppPluginPageTabController < FbAppPluginController
           render action: 'catalog' unless performed?
         else
           # fake profile for catalog controller
-          @profile = environment.enterprise_template
+          @profile = environment.enterprise_default_template
           @profile.shopping_cart_settings.enabled = true
 
           base_query = @page_tab.value
@@ -62,6 +62,7 @@ class FbAppPluginPageTabController < FbAppPluginController
   end
 
   def admin
+    return redirect_to '/plugin/fb_app/myprofile_config' if params[:page_id].blank? and params[:signed_request].blank?
     return unless load_page_tabs
 
     if request.put? and @page_id.present?
@@ -91,7 +92,7 @@ class FbAppPluginPageTabController < FbAppPluginController
     @query = params[:query]
     @profiles = scope.limit(10).order('name ASC').
       where(['name ILIKE ? OR name ILIKE ? OR identifier LIKE ?', "#{@query}%", "% #{@query}%", "#{@query}%"])
-    render partial: 'open_graph_plugin_myprofile/profile_search', locals: {profiles: @profiles}
+    render partial: 'open_graph_plugin/myprofile/profile_search', locals: {profiles: @profiles}
   end
 
   # unfortunetely, this needs to be public
@@ -101,9 +102,8 @@ class FbAppPluginPageTabController < FbAppPluginController
 
   protected
 
-  def default_url_options options={}
-    options[:profile] = @profile.identifier if @profile
-    super
+  def default_url_options
+    {profile: @profile.identifier} if @profile
   end
 
   def load_page_tabs

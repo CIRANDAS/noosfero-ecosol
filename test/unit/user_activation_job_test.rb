@@ -1,6 +1,6 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
-class NotifyActivityToProfilesJobTest < ActiveSupport::TestCase
+class UserActivationJobTest < ActiveSupport::TestCase
 
   should 'create job on user creation' do
     user = new_user :login => 'test1'
@@ -33,6 +33,18 @@ class NotifyActivityToProfilesJobTest < ActiveSupport::TestCase
     user = new_user :login => 'test3'
     user.person.is_template = true
     user.person.save
+    job = UserActivationJob.new(user.id)
+    assert_no_difference 'User.count' do
+      job.perform
+      process_delayed_job_queue
+    end
+  end
+
+  should 'not destroy user if a moderate user registration task exists' do
+    env = Environment.default
+    env.enable('skip_new_user_email_confirmation')
+    env.enable('admin_must_approve_new_users')
+    user = new_user :login => 'test3'
     job = UserActivationJob.new(user.id)
     assert_no_difference 'User.count' do
       job.perform

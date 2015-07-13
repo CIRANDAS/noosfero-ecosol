@@ -38,8 +38,12 @@ module BoxesHelper
     end
   end
 
+  def boxes_limit holder
+    controller.send(:custom_design)[:boxes_limit] || holder.boxes_limit(controller.send(:custom_design)[:layout_template])
+  end
+
   def display_boxes(holder, main_content)
-    boxes = holder.boxes.with_position.first(controller.custom_design[:boxes_limit] || holder.boxes_limit(controller.custom_design[:layout_template]))
+    boxes = holder.boxes.with_position.first(boxes_limit(holder))
     content = boxes.reverse.map { |item| display_box(item, main_content) }.join("\n")
     content = main_content if (content.blank?)
 
@@ -66,7 +70,7 @@ module BoxesHelper
   end
 
   def display_box_content(box, main_content)
-    context = {article: @page, request_path: request.path, locale: locale, params: request.params, controller: controller}
+    context = { :article => @page, :request_path => request.path, :locale => locale, :params => request.params, :user => user, :controller => controller }
     box_decorator.select_blocks(box, box.blocks.includes(:box), context).map do |item|
       display_block item, main_content
     end.join("\n") + box_decorator.block_target(box)
@@ -119,7 +123,7 @@ module BoxesHelper
   end
 
   def wrap_main_content(content)
-    (1..8).to_a.reverse.inject(content) { |acc,n| content_tag('div', acc, :id => 'main-content-wrapper-' + n.to_s) }
+    content_tag('div', content, :class => 'main-content')
   end
 
   def extract_block_content(content)
@@ -156,11 +160,14 @@ module BoxesHelper
     def self.select_blocks box, arr, context
       arr = arr.select{ |block| block.visible? context }
 
-      custom_design = context[:controller].custom_design
-      if custom_design[:insert] and box.position == custom_design[:insert][:box]
-        position, klass = custom_design[:insert][:position], custom_design[:insert][:block]
-        if not box.blocks.map(&:class).include? klass
-          block = klass.new :box => box
+      custom_design = context[:controller].send(:custom_design)
+      inserts = [custom_design[:insert]].flatten.compact
+      inserts.each do |insert_opts|
+        next unless box.position == insert_opts[:box]
+        position, block = insert_opts[:position], insert_opts[:block]
+        block = block.new box: box if block.is_a? Class
+
+        if not insert_opts[:uniq] or not box.blocks.map(&:class).include? block.klass
           arr = arr.insert position, block
         end
       end
@@ -184,47 +191,52 @@ module BoxesHelper
       else
         "before-block-#{block.id}"
       end
-
-    content_tag('div', '&nbsp;', :id => id, :class => 'block-target' ) + drop_receiving_element(id, :url => { :action => 'move_block', :target => id }, :accept => box.acceptable_blocks, :hoverclass => 'block-target-hover')
+    if block.nil? || movable?(block)
+      content_tag('div', '&nbsp;', :id => id, :class => 'block-target' ) + drop_receiving_element(id, :url => { :action => 'move_block', :target => id }, :accept => box.acceptable_blocks, :hoverclass => 'block-target-hover')
+    else
+      ""
+    end
   end
 
   # makes the given block draggable so it can be moved away.
   def block_handle(block)
-    draggable_element("block-#{block.id}", :revert => true)
+    movable?(block) ? draggable_element("block-#{block.id}", :revert => true) : ""
   end
 
   def block_edit_buttons(block)
     buttons = []
     nowhere = 'javascript: return false;'
 
-    if block.first?
-      buttons << icon_button('up-disabled', _("Can't move up anymore."), nowhere)
-    else
-      buttons << icon_button('up', _('Move block up'), { :action => 'move_block_up', :id => block.id }, { :method => 'post' })
-    end
+    if movable?(block)
+      if block.first?
+        buttons << icon_button('up-disabled', _("Can't move up anymore."), nowhere)
+      else
+        buttons << icon_button('up', _('Move block up'), { :action => 'move_block_up', :id => block.id }, { :method => 'post' })
+      end
 
-    if block.last?
-      buttons << icon_button('down-disabled', _("Can't move down anymore."), nowhere)
-    else
-      buttons << icon_button(:down, _('Move block down'), { :action => 'move_block_down' ,:id => block.id }, { :method => 'post'})
-    end
+      if block.last?
+        buttons << icon_button('down-disabled', _("Can't move down anymore."), nowhere)
+      else
+        buttons << icon_button(:down, _('Move block down'), { :action => 'move_block_down' ,:id => block.id }, { :method => 'post'})
+      end
 
-    holder = block.owner
-    # move to opposite side
-    # FIXME too much hardcoded stuff
-    if holder.layout_template == 'default'
-      if block.box.position == 2 # area 2, left side => move to right side
-        buttons << icon_button('right', _('Move to the opposite side'), { :action => 'move_block', :target => 'end-of-box-' + holder.boxes[2].id.to_s, :id => block.id }, :method => 'post' )
-      elsif block.box.position == 3 # area 3, right side => move to left side
-        buttons << icon_button('left', _('Move to the opposite side'), { :action => 'move_block', :target => 'end-of-box-' + holder.boxes[1].id.to_s, :id => block.id }, :method => 'post' )
+      holder = block.owner
+      # move to opposite side
+      # FIXME too much hardcoded stuff
+      if holder.layout_template == 'default'
+        if block.box.position == 2 # area 2, left side => move to right side
+          buttons << icon_button('right', _('Move to the opposite side'), { :action => 'move_block', :target => 'end-of-box-' + holder.boxes[2].id.to_s, :id => block.id }, :method => 'post' )
+        elsif block.box.position == 3 # area 3, right side => move to left side
+          buttons << icon_button('left', _('Move to the opposite side'), { :action => 'move_block', :target => 'end-of-box-' + holder.boxes[1].id.to_s, :id => block.id }, :method => 'post' )
+        end
       end
     end
 
-    if block.editable?
+    if editable?(block)
       buttons << modal_icon_button(:edit, _('Edit'), { :action => 'edit', :id => block.id })
     end
 
-    if !block.main?
+    if movable?(block) && !block.main?
       buttons << icon_button(:delete, _('Remove block'), { :action => 'remove', :id => block.id }, { :method => 'post', :confirm => _('Are you sure you want to remove this block?')})
       buttons << icon_button(:clone, _('Clone'), { :action => 'clone_block', :id => block.id }, { :method => 'post' })
     end
@@ -240,8 +252,8 @@ module BoxesHelper
               content_tag('h2', _('Embed block code')) +
               content_tag('div', _('Below, you''ll see a field containing embed code for the block. Just copy the code and paste it into your website or blogging software.'), :style => 'margin-bottom: 1em;') +
               content_tag('textarea', embed_code, :style => 'margin-bottom: 1em; width:100%; height:40%;', :readonly => 'readonly') +
-              thickbox_close_button(_('Close')), :style => 'display: none;', :id => "embed-code-box-#{block.id}")
-      buttons << thickbox_inline_popup_icon(:embed, _('Embed code'), {}, "embed-code-box-#{block.id}") << html
+              modal_close_button(_('Close')), :style => 'display: none;', :id => "embed-code-box-#{block.id}")
+      buttons << modal_inline_icon(:embed, _('Embed code'), {}, "#embed-code-box-#{block.id}") << html
     end
 
     content_tag('div', buttons.join("\n") + tag('br', :style => 'clear: left'), :class => 'button-bar')
@@ -262,4 +274,11 @@ module BoxesHelper
     classes
   end
 
+  def movable?(block)
+    return block.movable? || user.is_admin?
+  end
+
+  def editable?(block)
+    return block.editable? || user.is_admin?
+  end
 end

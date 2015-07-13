@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class OrganizationMailingTest < ActiveSupport::TestCase
 
@@ -57,7 +57,7 @@ class OrganizationMailingTest < ActiveSupport::TestCase
 
   should 'return url for organization on url' do
     mailing = build(OrganizationMailing, :source => community)
-    assert_equal "#{community.environment.top_url}/#{community.name.to_slug}/", mailing.url
+    assert_equal "#{community.environment.top_url}/#{community.name.to_slug}", mailing.url
   end
 
   should 'deliver mailing to each member after create' do

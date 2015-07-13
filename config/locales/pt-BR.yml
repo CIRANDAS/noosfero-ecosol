@@ -1,6 +1,7 @@
 # encoding: UTF-8
 # pt-BR translations for Ruby on Rails
-"pt-BR": &pt-BR
+
+pt-BR: &pt-BR
   # formatos de data e hora
   date:
     formats:
@@ -61,6 +62,7 @@
   time:
     formats:
       default: "%A, %d de %B de %Y, %H:%M h"
+      momentjs_LLLL: "%A, %d de %B de %Y às %H:%M"
       short: "%d/%m, %H:%M h"
       long: "%A, %d de %B de %Y, %H:%M h"
     am: ''
@@ -232,5 +234,5 @@
       full_messages:
         format: "%{attribute} %{message}"
 
-'pt_BR':
+pt:
   <<: *pt-BR

@@ -6,55 +6,78 @@ module SolrPlugin::SearchHelper
   DistFilt = 200
   DistBoost = 50
 
-  CatalogSortOptions = {
-    relevance: {option: ['Relevance', ''], solr: '', empty_solr: 'solr_plugin_available_sortable desc, solr_plugin_highlighted_sortable desc, solr_plugin_name_sortable asc'},
-    name: {option: ['Name', 'name'], solr: 'solr_plugin_available_sortable desc, solr_plugin_name_sortable asc'},
-    price: {option: ['Lowest price', 'price'], solr: 'solr_plugin_available_sortable desc, solr_plugin_price_sortable asc'},
-    newest: {option: ['Newest', 'newest'], solr: 'solr_plugin_available_sortable desc, created_at desc'},
-    updated: {option: ['Last updated', 'updated'], solr: 'solr_plugin_available_sortable desc, updated_at desc'},
-  }
-
   SortOptions = {
-    products: ActiveSupport::OrderedHash[ :none, {label: _('Relevance')},
-      :more_recent, {label: _('More recent'), solr_opts: {sort: 'updated_at desc, score desc'}},
-      :name, {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
-      :closest, {label: _('Closest to me'), if: proc{ logged_in? && (profile=current_user.person).lat && profile.lng },
+    catalog: {
+      relevance: {option: ['Relevance', ''], solr_opts: {},
+                  empty_solr_opts: {sort: 'solr_plugin_available_sortable desc, solr_plugin_highlighted_sortable desc, score desc, solr_plugin_name_sortable asc'}},
+      name: {option: ['Name', 'name'], solr_opts: {sort: 'solr_plugin_available_sortable desc, solr_plugin_name_sortable asc'}},
+      price: {option: ['Lowest price', 'price'], solr_opts: {sort: 'solr_plugin_available_sortable desc, solr_plugin_price_sortable asc'}},
+      newest: {option: ['Newest', 'newest'], solr_opts: {sort: 'solr_plugin_available_sortable desc, created_at desc'}},
+      updated: {option: ['Last updated', 'updated'], solr_opts: {sort: 'solr_plugin_available_sortable desc, updated_at desc'}},
+    },
+    products: {
+      relevance: {label: _('Relevance')},
+      name: {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
+      more_recent: {label: c_('More recent'), solr_opts: {sort: 'created_at desc, score desc'}},
+      #more_recent: {label: c_('More recent'), solr_opts: {boost_functions: ['recip(ms(NOW/HOUR,updated_at),1.3e-10,1,1)']}},
+      closest: {label: _('Closest to me'), if: proc{ logged_in? && (profile=current_user.person).lat && profile.lng },
         solr_opts: {sort: "geodist() asc",
           latitude: proc{ current_user.person.lat }, longitude: proc{ current_user.person.lng }}},
-    ],
-    events: ActiveSupport::OrderedHash[ :none, {label: _('Relevance')},
-      :name, {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
-    ],
-    articles: ActiveSupport::OrderedHash[ :none, {label: _('Relevance')},
-      :name, {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
-      :more_recent, {label: _('More recent'), solr_opts: {sort: 'updated_at desc, score desc'}},
-    ],
-    enterprises: ActiveSupport::OrderedHash[ :none, {label: _('Relevance')},
-      :name, {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
-    ],
-    people: ActiveSupport::OrderedHash[ :none, {label: _('Relevance')},
-      :name, {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
-    ],
-    communities: ActiveSupport::OrderedHash[ :none, {label: _('Relevance')},
-      :name, {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
-    ],
+    },
+    events: {
+      none: {label: _('Relevance')},
+      name: {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
+      more_recent: {label: c_('More recent'), solr_opts: {sort: 'created_at desc, score desc'}},
+    },
+    articles: {
+      none: {label: _('Relevance')},
+      name: {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
+      more_recent: {label: c_('More recent'), solr_opts: {sort: 'created_at desc, score desc'}},
+    },
+    enterprises: {
+      none: {label: _('Relevance')},
+      name: {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
+      more_recent: {label: c_('More recent'), solr_opts: {sort: 'created_at desc, score desc'}},
+    },
+    people: {
+      none: {label: _('Relevance')},
+      name: {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
+      more_recent: {label: c_('More recent'), solr_opts: {sort: 'created_at desc, score desc'}},
+    },
+    communities: {
+      none: {label: _('Relevance')},
+      name: {label: _('Name'), solr_opts: {sort: 'solr_plugin_name_sortable asc'}},
+      more_recent: {label: c_('More recent'), solr_opts: {sort: 'created_at desc, score desc'}},
+    },
   }
 
-  def filters(asset)
+  TotalFound = {
+    products: N_("%s products and/or services found"),
+    articles: N_("%s contents found"),
+    events: N_("%s events found"),
+    people: N_("%s people found"),
+    enterprises: N_("%s enterprises found"),
+    communities: N_("%s communities found"),
+  }
+
+  def empty_search?
+    @query.blank? and params[:facet].blank? and @category.blank?
+  end
+  def empty_query?(query, category)
+    category.nil? && query.blank?
+  end
+
+  def solr_filters_queries asset, environment
     case asset
     when :products
       ['solr_plugin_public:true', 'enabled:true']
-    when :catalog
+    when :catalog, :events, :categories, :product_categories
       []
-    when :events
-      []
+    when :profiles, :people, :organizations, :communities, :enterprises
+      ['solr_plugin_public:true', 'environment_id:%s' % environment.id]
     else
       ['solr_plugin_public:true']
     end
-  end
-
-  def empty_query?(query, category)
-    category.nil? && query.blank?
   end
 
   def asset_class(asset)
@@ -78,17 +101,9 @@ module SolrPlugin::SearchHelper
     )
  end
 
-  def label_total_found(asset, total_found)
-    labels = {
-      products: _("%s products offers found"),
-      articles: _("%s articles found"),
-      events: _("%s events found"),
-      people: _("%s people found"),
-      enterprises: _("%s enterprises found"),
-      communities: _("%s communities found"),
-    }
-    content_tag('span', labels[asset] % total_found,
-      class: "total-pages-found") if labels[asset]
+  def label_total_found asset, total_found
+    content_tag('span', _(TotalFound[asset]) % number_to_human(total_found),
+      class: "total-pages-found") if TotalFound[asset]
   end
 
   def load_facets
@@ -99,12 +114,12 @@ module SolrPlugin::SearchHelper
   def facets_menu asset
     @asset_class = asset_class asset
     load_facets
-    render 'facets_menu'
+    render 'solr_plugin/search/facets_menu'
   end
 
   def facets_unselect_menu(asset)
-    @asset_class = asset_class(asset)
-    render 'facets_unselect_menu'
+    @asset_class = asset_class asset
+    render 'solr_plugin/search/facets_unselect_menu'
   end
 
   def facet_selecteds_html_for environment, klass, params
@@ -142,7 +157,7 @@ module SolrPlugin::SearchHelper
     ret.map do |label, name, url|
       content_tag('div', content_tag('span', label, class: 'facet-selected-label') +
         content_tag('span', name, class: 'facet-selected-name') +
-        link_to('', url, class: 'facet-selected-remove', title: 'remove facet'), class: 'facet-selected')
+        link_to('', url, class: 'icon-remove', title: 'remove facet'), class: 'facet-selected')
     end.join
   end
 
@@ -164,13 +179,13 @@ module SolrPlugin::SearchHelper
     else
       # preserve others filters and change this filter
       url = params.merge(facet: params[:facet].merge(
-        id => if facet[:label_id].nil? then value else { facet[:label_id] => value } end,
+        id => if facet[:label_id].nil? then value else { facet[:label_id] => [value] } end,
       ))
     end
 
     content_tag 'div', link_to(link_label, url, class: 'facet-result-link-label') +
         content_tag('span', (has_extra ? label[1] : ''), class: 'facet-result-extra-label') +
-        (count > 0 ? content_tag('span', " (#{count})", class: 'facet-result-count') : ''),
+        (count > 0 ? content_tag('span', " (#{number_to_human(count)})", class: 'facet-result-count') : ''),
       class: 'facet-menu-item' + (selected ? ' facet-result-link-selected' : '')
   end
 

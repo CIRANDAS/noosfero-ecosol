@@ -1,10 +1,12 @@
-class UserMailer < ActionMailer::Base
+class UserMailer < ApplicationMailer
+
   def activation_email_notify(user)
+    self.environment = user.environment
+
     user_email = "#{user.login}@#{user.email_domain}"
     @name = user.name
     @email = user_email
     @webmail = MailConf.webmail_url(user.login, user.email_domain)
-    @environment = user.environment.name
     @url = url_for(:host => user.environment.default_hostname, :controller => 'home')
 
     mail(
@@ -15,9 +17,10 @@ class UserMailer < ActionMailer::Base
   end
 
   def activation_code(user)
+    self.environment = user.environment
+
     @recipient = user.name
     @activation_code = user.activation_code
-    @environment = user.environment.name
     @url = user.environment.top_url
     @redirection = (true if user.return_to)
     @join = (user.community_to_join if user.community_to_join)
@@ -30,6 +33,8 @@ class UserMailer < ActionMailer::Base
   end
 
   def signup_welcome_email(user)
+    self.environment = user.environment
+
     @body = user.environment.signup_welcome_text_body.gsub('{user_name}', user.name)
     email_subject = user.environment.signup_welcome_text_subject
     mail(
@@ -38,6 +43,24 @@ class UserMailer < ActionMailer::Base
       from: "#{user.environment.name} <#{user.environment.contact_email}>",
       subject: email_subject.blank? ? _("Welcome to environment %s") % [user.environment.name] : email_subject,
       body: @body
+    )
+  end
+
+  def profiles_suggestions_email(user)
+    self.environment = user.environment
+
+    @recipient = user.name
+    @url = user.environment.top_url
+    @people_suggestions_url = user.people_suggestions_url
+    @people_suggestions = user.suggested_people.sample(3)
+    @communities_suggestions_url = user.communities_suggestions_url
+    @communities_suggestions = user.suggested_communities.sample(3)
+
+    mail(
+      content_type: 'text/html',
+      to: user.email,
+      from: "#{user.environment.name} <#{user.environment.contact_email}>",
+      subject: _("[%s] What about grow up your network?") % user.environment.name
     )
   end
 

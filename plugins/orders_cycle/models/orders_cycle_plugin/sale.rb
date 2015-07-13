@@ -1,14 +1,11 @@
 class OrdersCyclePlugin::Sale < OrdersPlugin::Sale
 
-  has_many :cycle_orders, class_name: 'OrdersCyclePlugin::CycleOrder', foreign_key: :sale_id, dependent: :destroy
-  has_many :cycles, through: :cycle_orders, source: :cycle
-
   include OrdersCyclePlugin::OrderBase
 
-  after_save :cycle_change_purchases, if: :cycle
-  before_destroy :cycle_remove_purchases_items, if: :cycle
+  has_many :cycles, through: :cycle_sales, source: :cycle
 
-  scope :for_cycle, lambda{ |cycle| {conditions: ['orders_cycle_plugin_cycles.id = ?', cycle.id], joins: [:cycles]} }
+  after_save :change_purchases, if: :cycle
+  before_destroy :remove_purchases_items, if: :cycle
 
   def current_status
     return 'forgotten' if self.forgotten?
@@ -29,23 +26,17 @@ class OrdersCyclePlugin::Sale < OrdersPlugin::Sale
   def supplier_delivery
     super || (self.cycle.delivery_methods.first rescue nil)
   end
-  def supplier_delivery_id
-    self['supplier_delivery_id'] || (self.cycle.delivery_methods.first.id rescue nil)
-  end
 
-  protected
-
-  # See also: OrdersCyclePlugin::Cycle#generate_purchases
-  def cycle_change_purchases
+  def change_purchases
     return unless self.status_was.present?
     if self.ordered_at_was.nil? and self.ordered_at.present?
-      self.cycle_add_purchases_items
+      self.add_purchases_items
     elsif self.ordered_at_was.present? and self.ordered_at.nil?
-      self.cycle_remove_purchases_items
+      self.remove_purchases_items
     end
   end
 
-  def cycle_add_purchases_items
+  def add_purchases_items
     ActiveRecord::Base.transaction do
       self.items.each do |item|
         next unless supplier_product = item.product.supplier_product
@@ -55,25 +46,25 @@ class OrdersCyclePlugin::Sale < OrdersPlugin::Sale
         purchase ||= OrdersCyclePlugin::Purchase.create! cycle: self.cycle, consumer: self.profile, profile: supplier
 
         purchased_item = purchase.items.for_product(supplier_product).first
-        purchased_item ||= purchase.items.build order: purchase, product: supplier_product
+        purchased_item ||= purchase.items.build purchase: purchase, product: supplier_product
         purchased_item.quantity_consumer_ordered ||= 0
-        purchased_item.quantity_consumer_ordered += item.quantity_consumer_ordered
+        purchased_item.quantity_consumer_ordered += item.status_quantity
         purchased_item.price_consumer_ordered ||= 0
-        purchased_item.price_consumer_ordered += item.quantity_consumer_ordered * supplier_product.price
-        purchased_item.save run_callbacks: false # dont touch which cause an infinite loop
+        purchased_item.price_consumer_ordered += item.status_quantity * supplier_product.price
+        purchased_item.save!
       end
     end
   end
 
-  def cycle_remove_purchases_items
+  def remove_purchases_items
     ActiveRecord::Base.transaction do
       self.items.each do |item|
         next unless supplier_product = item.product.supplier_product
-        next unless purchase = supplier_product.purchases.for_cycle(self.cycle).first
+        next unless purchase = supplier_product.orders_cycles_purchases.for_cycle(self.cycle).first
 
         purchased_item = purchase.items.for_product(supplier_product).first
-        purchased_item.quantity_consumer_ordered -= item.quantity_consumer_ordered
-        purchased_item.price_consumer_ordered -= item.quantity_consumer_ordered * supplier_product.price
+        purchased_item.quantity_consumer_ordered -= item.status_quantity
+        purchased_item.price_consumer_ordered -= item.status_quantity * supplier_product.price
         purchased_item.save!
 
         purchased_item.destroy if purchased_item.quantity_consumer_ordered.zero?
@@ -82,7 +73,7 @@ class OrdersCyclePlugin::Sale < OrdersPlugin::Sale
     end
   end
 
-  handle_asynchronously :cycle_add_purchases_items
-  handle_asynchronously :cycle_remove_purchases_items
+  handle_asynchronously :add_purchases_items
+  handle_asynchronously :remove_purchases_items
 
 end

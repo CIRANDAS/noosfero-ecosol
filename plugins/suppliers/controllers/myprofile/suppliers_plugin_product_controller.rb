@@ -7,13 +7,13 @@ class SuppliersPluginProductController < MyProfileController
   protect 'edit_profile', :profile
 
   helper SuppliersPlugin::TranslationHelper
-  helper SuppliersPlugin::SuppliersDisplayHelper
+  helper SuppliersPlugin::DisplayHelper
 
   def index
     filter
     respond_to do |format|
-      format.html
-      format.js { render partial: 'suppliers_plugin_product/search' }
+      format.html{ render template: 'suppliers_plugin_product/index' }
+      format.js{ render partial: 'suppliers_plugin_product/search' }
     end
   end
 
@@ -27,15 +27,18 @@ class SuppliersPluginProductController < MyProfileController
   end
 
   def edit
-    @product = SuppliersPlugin::DistributedProduct.find params[:id]
+    @product = profile.distributed_products.find params[:id]
     @product.update_attributes params["product_#{@product.id}"]
   end
 
   def import
     if params[:csv].present?
+      if params[:remove_all_suppliers] == 'true'
+        profile.suppliers.except_self.find_each(batch_size: 20){ |s| s.delay.destroy }
+      end
       SuppliersPlugin::Import.delay.products profile, params[:csv].read
 
-      @notice = t('controllers.product.import_in_progress')
+      @notice = t'controllers.product.import_in_progress'
       respond_to{ |format| format.js{ render layout: false } }
     else
       respond_to{ |format| format.html{ render layout: false } }
@@ -84,7 +87,7 @@ class SuppliersPluginProductController < MyProfileController
     @units = Unit.all
   end
 
-  extend ControllerInheritance::ClassMethods
+  extend HMVC::ClassMethods
   hmvc OrdersPlugin
 
 end

@@ -1,8 +1,5 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 require 'licenses_controller'
-
-# Re-raise errors caught by the controller.
-class LIcensesController; def rescue_action(e) raise e end; end
 
 class LicensesControllerTest < ActionController::TestCase
 

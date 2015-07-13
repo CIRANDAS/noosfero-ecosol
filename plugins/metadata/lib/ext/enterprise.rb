@@ -3,16 +3,25 @@ require_dependency "#{File.dirname __FILE__}/profile"
 
 class Enterprise
 
-  Metadata = Metadata.merge({
-    'og:type' => MetadataPlugin.og_types[:enterprise],
-	  'business:contact_data:email' => proc{ |e, c| e.contact_email },
-	  'business:contact_data:phone_number' => proc{ |e, c| e.contact_phone },
-	  'business:contact_data:street_address' => proc{ |e, c| e.address },
-	  'business:contact_data:locality' => proc{ |e, c| e.city },
-	  'business:contact_data:region' => proc{ |e, c| e.state },
-	  'business:contact_data:postal_code' => proc{ |e, c| e.zip_code },
-	  'business:contact_data:country_name' => proc{ |e| e.country },
-	  'place:location:latitude' => proc{ |e, c| p.lat },
-	  'place:location:longitude' => proc{ |e, c| p.lng },
-  })
+  metadata_spec namespace: :og, tags: {
+    type: proc{ |e, plugin| plugin.context.params[:og_type] || MetadataPlugin.og_types[:enterprise] || :enterprise },
+  }
+
+  # required for businness
+  metadata_spec namespace: 'place:location', tags: {
+    latitude: proc{ |e, plugin| if e.lat.present? then e.lat else e.environment.lat end },
+    longitude: proc{ |e, plugin| if e.lng.present? then e.lng else e.environment.lng end },
+  }
+
+  metadata_spec namespace: 'business:contact_data', tags: {
+    # all required
+    email: proc{ |e, plugin| if e.contact_email.present? then e.contact_email else e.environment.contact_email end },
+    phone_number: proc{ |e, plugin| if e.contact_phone.present? then e.contact_phone else e.environment.contact_phone end },
+    street_address: proc{ |e, plugin| if e.address.present? then e.address else e.environment.address end },
+    locality: proc{ |e, plugin| if e.city.present? then e.city else e.environment.city end },
+    region: proc{ |e, plugin| if e.state.present? then e.state else e.environment.state end },
+    postal_code: proc{ |e, plugin| if e.zip_code.present? then e.zip_code else e.environment.postal_code end },
+    country_name: proc{ |e, plugin| if e.country.present? then e.country else e.environment.country_name end },
+  }
+
 end

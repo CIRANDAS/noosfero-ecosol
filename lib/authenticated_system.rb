@@ -24,7 +24,10 @@ module AuthenticatedSystem
     # Accesses the current user from the session.
     def current_user
       @current_user ||= begin
-        User.current = (session[:user] && User.find_by_id(session[:user])) || nil
+        id = session[:user]
+        user = User.where(id: id).first if id
+        user.session = session if user
+        User.current = user
       end
     end
 
@@ -34,6 +37,7 @@ module AuthenticatedSystem
         session.delete(:user)
       else
         session[:user] = new_user.id
+        new_user.session = session
         new_user.register_login
       end
       @current_user = User.current = new_user
@@ -77,7 +81,11 @@ module AuthenticatedSystem
       if logged_in? && authorized?
         true
       else
-        access_denied
+        if params[:require_login_popup]
+          render :json => { :require_login_popup => true }
+        else
+          access_denied
+        end
       end
     end
 

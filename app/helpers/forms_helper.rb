@@ -101,10 +101,7 @@ module FormsHelper
   end
 
   def required_fields_message
-    content_tag('p', content_tag('span',
-      _("The <label class='pseudoformlabel'>highlighted</label> fields are mandatory."),
-      :class => 'required-field'
-    ))
+    content_tag('p', _("The %{highlighted} fields are mandatory.") % {highlighted: content_tag('span', _("highlighted"), :class=>'required-field')})
   end
 
   def options_for_select_with_title(container, selected = nil)
@@ -267,7 +264,7 @@ module FormsHelper
     )
   end
 
-  def select_profile_folder(label_text, field_id, profile, default_value='', html_options = {}, js_options = {}, find_options = {})
+  def select_profile_folder(label_text, field_id, profile, default_value='', html_options = {}, js_options = {}, find_options = {}, extra_options = {})
     if find_options.empty?
       folders = profile.folders
     else
@@ -278,7 +275,7 @@ module FormsHelper
       select_tag(
         field_id,
         options_for_select(
-          [[profile.identifier, '']] +
+          [[(extra_options[:root_label] || profile.identifier), '']] +
           folders.collect {|f| [ profile.identifier + '/' +  f.full_name, f.id.to_s ] },
           default_value.to_s
         ),

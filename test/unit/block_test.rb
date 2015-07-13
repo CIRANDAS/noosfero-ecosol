@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class BlockTest < ActiveSupport::TestCase
 
@@ -6,7 +6,7 @@ class BlockTest < ActiveSupport::TestCase
   should 'describe itself' do
     assert_kind_of String, Block.description
   end
-  
+
   should 'access owner through box' do
     user = create_user('testinguser').person
 
@@ -33,6 +33,24 @@ class BlockTest < ActiveSupport::TestCase
 
   should 'be editable by default' do
     assert Block.new.editable?
+  end
+
+  should 'be editable if edit modes is all' do
+    block = Block.new
+    block.edit_modes = 'all'
+
+    assert block.editable?
+  end
+
+  should 'be movable by default' do
+    assert Block.new.movable?
+  end
+
+  should 'be movable if move modes is all' do
+    block = Block.new
+    block.move_modes = 'all'
+
+    assert block.movable?
   end
 
   should 'have default titles' do
@@ -82,7 +100,7 @@ class BlockTest < ActiveSupport::TestCase
   should 'be able to be displayed only in the homepage (index) of the environment' do
     block = build(Block, :display => 'home_page_only')
 
-    assert_equal true, block.visible?(:article => nil, :request_path => '/')
+    assert_equal true, block.visible?(:article => nil, :request_path => "#{Noosfero.root('/')}")
     assert_equal false, block.visible?(:article => nil)
   end
 
@@ -102,7 +120,7 @@ class BlockTest < ActiveSupport::TestCase
     block = build(Block, :display => 'except_home_page')
     block.stubs(:owner).returns(profile)
 
-    assert_equal false, block.visible?(:article => nil, :request_path => '/testinguser')
+    assert_equal false, block.visible?(:article => nil, :request_path => "#{Noosfero.root('/')}profile/testinguser")
     assert_equal true, block.visible?(:article => nil)
   end
 
@@ -230,7 +248,8 @@ class BlockTest < ActiveSupport::TestCase
   should 'generate embed code' do
     b = Block.new
     b.stubs(:url_for).returns('http://myblogtest.com/embed/block/1')
-    assert_equal "<iframe class=\"embed block block\" frameborder=\"0\" height=\"768\" src=\"http://myblogtest.com/embed/block/1\" width=\"1024\"></iframe>", b.embed_code.call
+    assert_equal "<iframe src=\"http://myblogtest.com/embed/block/1\" frameborder=\"0\" width=\"1024\" height=\"768\" class=\"embed block block\"></iframe>",
+      b.embed_code.call
   end
 
   should 'default value for display_user is all' do
@@ -282,6 +301,59 @@ class BlockTest < ActiveSupport::TestCase
     person = fast_create(Person)
     block = Block.new
     assert_equal block.cache_key('en'), block.cache_key('en', person)
+  end
+
+  should 'display block to members of community for display_user = members' do
+    community = fast_create(Community)
+    user = create_user('testinguser')
+    community.add_member(user.person)
+
+    box = fast_create(Box, :owner_id => community.id, :owner_type => 'Community')
+    block = create(Block, :box_id => box.id)
+    block.display_user = 'followers'
+    block.save!
+    assert block.display_to_user?(user.person)
+  end
+
+  should 'do not display block to non members of community for display_user = members' do
+    community = fast_create(Community)
+    user = create_user('testinguser')
+
+    box = fast_create(Box, :owner_id => community.id, :owner_type => 'Community')
+    block = create(Block, :box_id => box.id)
+    block.display_user = 'followers'
+    block.save!
+    assert !block.display_to_user?(user.person)
+  end
+
+  should 'display block to friends of person for display_user = friends' do
+    person = create_user('person_one').person
+    person_friend = create_user('person_friend').person
+
+    person.add_friend(person_friend)
+
+    box = fast_create(Box, :owner_id => person.id, :owner_type => 'Person')
+    block = create(Block, :box_id => box.id)
+    block.display_user = 'followers'
+    block.save!
+    assert block.display_to_user?(person_friend)
+  end
+
+  should 'do not display block to non friends of person for display_user = friends' do
+    person = create_user('person_one').person
+    person_friend = create_user('person_friend').person
+
+    box = fast_create(Box, :owner_id => person.id, :owner_type => 'Person')
+    block = create(Block, :box_id => box.id)
+    block.display_user = 'followers'
+    block.save!
+    assert !block.display_to_user?(person_friend)
+  end
+
+  should 'get limit as a number when limit is string' do
+    block = RecentDocumentsBlock.new
+    block.settings[:limit] = '5'
+    assert block.get_limit.is_a?(Fixnum)
   end
 
 end

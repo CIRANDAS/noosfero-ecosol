@@ -1,9 +1,6 @@
 # encoding: UTF-8
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 require 'test_controller'
-
-# Re-raise errors caught by the controller.
-class TestController; def rescue_action(e) raise e end; end
 
 class ApplicationControllerTest < ActionController::TestCase
   all_fixtures
@@ -281,10 +278,7 @@ class ApplicationControllerTest < ActionController::TestCase
     uses_host 'other.environment'
     get :index
     assert_tag :tag => 'div', :attributes => {:id => 'user_menu_ul'}
-    assert_tag :tag => 'div', :attributes => {:id => 'user_menu_ul'},
-                :descendant => {:tag => 'a', :attributes => { :href => 'http://other.environment/adminuser' }},
-                :descendant => {:tag => 'a', :attributes => { :href => 'http://other.environment/myprofile/adminuser' }},
-                :descendant => {:tag => 'a', :attributes => { :href => '/admin' }}
+    assert_tag tag: 'div', attributes: {id: 'user_menu_ul'}, descendant: {tag: 'a', attributes: { href: '/admin' }}
   end
 
   should 'not display invisible blocks' do
@@ -362,13 +356,10 @@ class ApplicationControllerTest < ActionController::TestCase
     environment.enable_plugin(Plugin1.name)
     environment.enable_plugin(Plugin2.name)
 
-    ActionView::Helpers::AssetTagHelper::StylesheetIncludeTag.any_instance.stubs('asset_file_path!')
-    ActionView::Helpers::AssetTagHelper::JavascriptIncludeTag.any_instance.stubs('asset_file_path!')
-
     get :index
 
-    assert_tag :tag => 'link', :attributes => {:href => /#{plugin1_path}/, :type => 'text/css', :rel => 'stylesheet'}
-    assert_tag :tag => 'link', :attributes => {:href => /#{plugin2_path}/, :type => 'text/css', :rel => 'stylesheet'}
+    assert_tag tag: 'link', attributes: {href: /#{plugin1_path}/, rel: 'stylesheet'}
+    assert_tag tag: 'link', attributes: {href: /#{plugin2_path}/, rel: 'stylesheet'}
   end
 
   should 'include javascripts supplied by plugins' do
@@ -398,13 +389,11 @@ class ApplicationControllerTest < ActionController::TestCase
     environment.enable_plugin(Plugin1.name)
     environment.enable_plugin(Plugin2.name)
 
-    ActionView::Helpers::AssetTagHelper::JavascriptIncludeTag.any_instance.stubs('asset_file_path!')
-
     get :index
 
-    assert_tag :tag => 'script', :attributes => {:src => /#{plugin1_path}/, :type => 'text/javascript'}
-    assert_tag :tag => 'script', :attributes => {:src => /#{plugin2_path2}/, :type => 'text/javascript'}
-    assert_tag :tag => 'script', :attributes => {:src => /#{plugin2_path3}/, :type => 'text/javascript'}
+    assert_tag tag: 'script', attributes: {src: /#{plugin1_path}/}
+    assert_tag tag: 'script', attributes: {src: /#{plugin2_path2}/}
+    assert_tag tag: 'script', attributes: {src: /#{plugin2_path3}/}
   end
 
   should 'include content in the beginning of body supplied by plugins regardless it is a block or html code' do
@@ -464,15 +453,15 @@ class ApplicationControllerTest < ActionController::TestCase
     e.access_control_allow_origin = ['http://allowed']
     e.save!
 
-    @request.env["Origin"] = "http://allowed"
+    @request.headers["Origin"] = "http://allowed"
     get :index
     assert_response :success
 
-    @request.env["Origin"] = "http://other"
+    @request.headers["Origin"] = "http://other"
     get :index
     assert_response :success
 
-    @request.env["Origin"] = "http://other"
+    @request.headers["Origin"] = "http://other"
     e.restrict_to_access_control_origins = true
     e.save!
     get :index
@@ -484,7 +473,7 @@ class ApplicationControllerTest < ActionController::TestCase
     should 'change postgresql schema' do
       uses_host 'schema1.com'
       Noosfero::MultiTenancy.expects(:on?).returns(true)
-      Noosfero::MultiTenancy.expects(:mapping).returns({ 'schema1.com' => 'schema1' })
+      Noosfero::MultiTenancy.expects(:mapping).returns({ 'schema1.com' => 'schema1' }).at_least_once
       exception = assert_raise(ActiveRecord::StatementInvalid) { get :index }
       assert_match /SET search_path TO schema1/, exception.message
     end
@@ -498,64 +487,26 @@ class ApplicationControllerTest < ActionController::TestCase
 
   end
 
-  should 'do not duplicate plugin filters' do
-
-    class FilterPlugin < Noosfero::Plugin
-      def test_controller_filters
-        { :type => 'before_filter',
-          :method_name => 'filter_plugin',
-          :options => {:only => 'some_method'},
-          :block => lambda {} }
-      end
+  should 'register search_term occurrence on find_by_contents' do
+    controller = ApplicationController.new
+    controller.stubs(:environment).returns(Environment.default)
+    assert_difference 'SearchTermOccurrence.count', 1 do
+      controller.send(:find_by_contents, :people, Environment.default, Person, 'search_term', paginate_options={:page => 1}, options={})
+      process_delayed_job_queue
     end
-    Noosfero::Plugin.stubs(:all).returns([FilterPlugin.name])
-
-    Noosfero::Plugin.load_plugin_filters(FilterPlugin)
-    Noosfero::Plugin::Manager.any_instance.stubs(:enabled_plugins).returns([FilterPlugin.new])
-
-    get :index
-    get :index
-    assert_equal 1, @controller.class._process_action_callbacks.select{|c| c.filter == :application_controller_test_filter_plugin_filter_plugin}.count
   end
 
-  should 'do not call plugin filter block on a environment that this plugin is not enabled' do
-
-    class OtherFilterPlugin < Noosfero::Plugin
-      def test_controller_filters
-        { :type => 'before_filter',
-          :method_name => 'filter_plugin',
-          :options => {:only => 'some_method'},
-          :block => proc {'plugin block called'} }
+  should 'allow plugin to propose search terms suggestions' do
+    class SuggestionsPlugin < Noosfero::Plugin
+      def find_suggestions(query, context, asset, options={:limit => 5})
+        ['a', 'b', 'c']
       end
     end
-    Noosfero::Plugin.stubs(:all).returns([OtherFilterPlugin.name])
 
-    Noosfero::Plugin.load_plugin_filters(OtherFilterPlugin)
-    environment1 = fast_create(Environment, :name => 'test environment')
-    environment1.enable_plugin(OtherFilterPlugin.name)
-    environment2 = fast_create(Environment, :name => 'other test environment')
+    controller = ApplicationController.new
+    Noosfero::Plugin::Manager.any_instance.stubs(:enabled_plugins).returns([SuggestionsPlugin.new])
 
-    @controller.stubs(:environment).returns(environment1)
-    get :index
-    assert_equal 'plugin block called', @controller.application_controller_test_other_filter_plugin_filter_plugin
-
-    @controller.stubs(:environment).returns(environment2)
-    assert_equal nil, @controller.application_controller_test_other_filter_plugin_filter_plugin
-  end
-
-  should 'display meta tags for social media' do
-    get :index
-    assert_tag :tag => 'meta', :attributes => { :name => 'twitter:card', :value => 'summary' }
-    assert_tag :tag => 'meta', :attributes => { :name => 'twitter:title', :content => assigns(:environment).name }
-    assert_tag :tag => 'meta', :attributes => { :name => 'twitter:description', :content => assigns(:environment).name }
-    assert_no_tag :tag => 'meta', :attributes => { :name => 'twitter:image' }
-    assert_tag :tag => 'meta', :attributes => { :property => 'og:type', :content => 'website' }
-    assert_tag :tag => 'meta', :attributes => { :property => 'og:url', :content => assigns(:environment).top_url }
-    assert_tag :tag => 'meta', :attributes => { :property => 'og:title', :content => assigns(:environment).name }
-    assert_tag :tag => 'meta', :attributes => { :property => 'og:site_name', :content => assigns(:environment).name }
-    assert_tag :tag => 'meta', :attributes => { :property => 'og:description', :content => assigns(:environment).name }
-    assert_no_tag :tag => 'meta', :attributes => { :property => 'article:published_time' }
-    assert_no_tag :tag => 'meta', :attributes => { :property => 'og:image' }
+    assert_equal ['a', 'b', 'c'], controller.send(:find_suggestions, 'random', Environment.default, 'random')
   end
 
   should 'redirect to login if environment is restrict to members' do
@@ -614,6 +565,24 @@ class ApplicationControllerTest < ActionController::TestCase
     login_as create_user.login
     get :index
     assert_response :success
+  end
+
+  should "redirect to 404 if profile is '~' and user is not logged in" do
+    get :index, :profile => '~'
+    assert_response :missing
+  end
+
+  should "redirect to action when profile is '~' " do
+    login_as('ze')
+    get :index, :profile => '~'
+    assert_response 302
+  end
+
+  should "substitute '~' by current user and redirect properly " do
+    login_as('ze')
+    profile = Profile.where(:identifier => 'ze').first
+    get :index, :profile => '~'
+    assert_redirected_to :controller => 'test', :action => 'index', :profile => profile.identifier
   end
 
 end

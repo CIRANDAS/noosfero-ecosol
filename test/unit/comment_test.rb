@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class CommentTest < ActiveSupport::TestCase
 
@@ -286,7 +286,7 @@ class CommentTest < ActiveSupport::TestCase
   end
 
   should "return activities comments as a thread" do
-    person = fast_create(Person)
+    person = create_user.person
     a = TextileArticle.create!(:profile => person, :name => 'My article', :body => 'Article body')
     c0 = Comment.create!(:source => a, :body => 'My comment', :author => person)
     c1 = Comment.create!(:reply_of_id => c0.id, :source => a, :body => 'bla', :author => person)
@@ -294,6 +294,7 @@ class CommentTest < ActiveSupport::TestCase
     c3 = Comment.create!(:reply_of_id => c0.id, :source => a, :body => 'bla', :author => person)
     c4 = Comment.create!(:source => a, :body => 'My comment', :author => person)
     result = a.activity.comments
+    assert result.present?
     assert_equal c0, result[0]
     assert_equal [c1, c3], result[0].replies
     assert_equal [c2], result[0].replies[0].replies
@@ -302,7 +303,7 @@ class CommentTest < ActiveSupport::TestCase
   end
 
   should "return activities comments when some comment on thread is spam and not display its replies" do
-    person = fast_create(Person)
+    person = create_user.person
     a = TextileArticle.create!(:profile => person, :name => 'My article', :body => 'Article body')
     c0 = Comment.create(:source => a, :body => 'Root comment', :author => person)
     c1 = Comment.create(:reply_of_id => c0.id, :source => a, :body => 'c1', :author => person)
@@ -701,6 +702,52 @@ class CommentTest < ActiveSupport::TestCase
     c4 = fast_create(Comment)
 
     assert_equivalent [c1,c4], Comment.without_reply
+  end
+
+  should 'vote in a comment' do
+    comment = create_comment
+    person = create_user('voter').person
+    person.vote(comment, 5)
+    assert_equal 1, comment.voters_who_voted.length
+    assert_equal 5, comment.votes_total
+  end
+
+  should 'like a comment' do
+    comment = create_comment
+    person = create_user('voter').person
+    assert !comment.voted_by?(person, true)
+    person.vote_for(comment)
+    assert comment.voted_by?(person, true)
+    assert !comment.voted_by?(person, false)
+  end
+
+  should 'count voters for' do
+    comment = create_comment
+    person = create_user('voter').person
+    person2 = create_user('voter2').person
+    person3 = create_user('voter3').person
+    person.vote_for(comment)
+    person2.vote_for(comment)
+    person3.vote_against(comment)
+    assert_equal 2, comment.votes_for
+  end
+
+  should 'count votes againts' do
+    comment = create_comment
+    person = create_user('voter').person
+    person2 = create_user('voter2').person
+    person3 = create_user('voter3').person
+    person.vote_against(comment)
+    person2.vote_against(comment)
+    person3.vote_for(comment)
+    assert_equal 2, comment.votes_against
+  end
+
+  should 'be able to remove a voted comment' do
+    comment = create_comment
+    person = create_user('voter').person
+    person.vote(comment, 5)
+    comment.destroy
   end
 
   private

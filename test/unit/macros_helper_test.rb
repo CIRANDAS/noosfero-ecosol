@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class MacrosHelperTest < ActionView::TestCase
   include MacrosHelper
@@ -6,6 +6,7 @@ class MacrosHelperTest < ActionView::TestCase
   include ActionView::Helpers::FormOptionsHelper
   include ActionView::Helpers::FormTagHelper
   include ActionView::Helpers::TagHelper
+  include Noosfero::Plugin::HotSpot
 
   CONFIG = {
     :params => [
@@ -102,8 +103,7 @@ class MacrosHelperTest < ActionView::TestCase
         {:js_files => 'macro.js' }
       end
     end
-    ActionView::Helpers::AssetTagHelper::JavascriptIncludeTag.any_instance.stubs('asset_file_path!')
-    assert_equal "<script src=\"#{Plugin1.public_path('macro.js')}\" type=\"text/javascript\"></script>", include_macro_js_files
+    assert_equal "<script src=\"#{Plugin1.public_path('macro.js')}\"></script>", include_macro_js_files
   end
 
   should 'get macro css files' do

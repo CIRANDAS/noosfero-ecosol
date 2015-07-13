@@ -1,7 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
-# require 'profile_themes_controller'
-
-class ProfileThemesController; def rescue_action(e) raise e end; end
+require_relative "../test_helper"
 
 class ProfileThemesControllerTest < ActionController::TestCase
 

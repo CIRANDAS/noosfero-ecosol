@@ -1,5 +1,5 @@
 # encoding: UTF-8
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class LanguageHelperTest < ActiveSupport::TestCase
 
@@ -53,7 +53,7 @@ class LanguageHelperTest < ActiveSupport::TestCase
 
     self.expects(:language).returns('en')
     result = self.language_chooser(environment, :element => 'dropdown')
-    assert_match /<option value="en" selected="selected">English<\/option>/, result
+    assert_match /<option selected="selected" value="en">English<\/option>/, result
     assert_match /<option value="pt_BR">Português Brasileiro<\/option>/, result
     assert_match /<option value="fr">Français<\/option>/, result
     assert_match /<option value="it">Italiano<\/option>/, result

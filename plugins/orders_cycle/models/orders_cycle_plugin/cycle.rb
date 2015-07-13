@@ -9,22 +9,26 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
   DbStatuses = %w[new] + Statuses
   UserStatuses = Statuses
 
-  StatusActorMap = ActiveSupport::OrderedHash[
-    'edition', :supplier,
-    'orders', :supplier,
-    'purchases', :consumer,
-    'receipts', :consumer,
-    'separation', :supplier,
-    'delivery', :supplier,
-    'closing', :supplier,
-  ]
-  OrderStatusMap = ActiveSupport::OrderedHash[
-    'orders', :ordered,
-    'purchases', :draft,
-    'receipts', :ordered,
-    'separation', :accepted,
-    'delivery', :separated,
-  ]
+  # which status the sales are on each cycle status
+  SaleStatusMap = {
+    'edition' => nil,
+    'orders' => :ordered,
+    'purchases' => :accepted,
+    'receipts' => :accepted,
+    'separation' => :accepted,
+    'delivery' => :separated,
+    'closing' => :delivered,
+  }
+  # which status the purchases are on each cycle status
+  PurchaseStatusMap = {
+    'edition' => nil,
+    'orders' => nil,
+    'purchases' => :draft,
+    'receipts' => :ordered,
+    'separation' => :received,
+    'delivery' => :received,
+    'closing' => :received,
+  }
 
   belongs_to :profile
 
@@ -40,13 +44,14 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
 
   has_many :cycle_products, foreign_key: :cycle_id, class_name: 'OrdersCyclePlugin::CycleProduct', dependent: :destroy
   has_many :products, through: :cycle_products, order: 'products.name ASC',
-    include: [{from_products: [:from_products, {sources_from_products: [{supplier: [{profile: [:domains]}]}]}]}, {profile: [:domains]}]
+    include: [ :from_2x_products, :from_products, {profile: :domains}, ]
 
-  has_many :consumers, through: :sales, source: :consumer, order: 'name ASC'
+  has_many :consumers, through: :sales, source: :consumer, order: 'name ASC', uniq: true
   has_many :suppliers, through: :products, order: 'suppliers_plugin_suppliers.name ASC', uniq: true
   has_many :orders_suppliers, through: :sales, source: :profile, order: 'name ASC'
 
   has_many :from_products, through: :products, order: 'name ASC', uniq: true
+  has_many :supplier_products, through: :products, order: 'name ASC', uniq: true
   has_many :product_categories, through: :products, order: 'name ASC', uniq: true
 
   has_many :orders_confirmed, through: :cycle_orders, source: :sale, order: 'id ASC',
@@ -70,10 +75,14 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
 
   scope :has_volunteers_periods, -> {uniq.joins [:volunteers_periods]}
 
-  extend CodeNumbering::ClassMethods
-  code_numbering :code, scope: Proc.new { self.profile.orders_cycles }
-
   # status scopes
+  scope :on_edition, -> { where status: 'edition' }
+  scope :on_orders, -> { where status: 'orders' }
+  scope :on_purchases, -> { where status: 'purchases' }
+  scope :on_separation, -> { where status: 'separation' }
+  scope :on_delivery, -> { where status: 'delivery' }
+  scope :on_closing, -> { where status: 'closing' }
+
   scope :defuncts, conditions: ["status = 'new' AND created_at < ?", 2.days.ago]
   scope :not_new, conditions: ["status <> 'new'"]
   scope :on_orders, lambda {
@@ -114,9 +123,16 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
   validate :validate_delivery_dates, if: :not_new?
 
   before_validation :step_new
-  before_validation :check_status
+  before_validation :update_orders_status
   before_save :add_products_on_edition_state
   after_create :delay_purge_profile_defuncts
+
+  extend CodeNumbering::ClassMethods
+  code_numbering :code, scope: Proc.new { self.profile.orders_cycles }
+
+  extend OrdersPlugin::DateRangeAttr::ClassMethods
+  date_range_attr :start, :finish
+  date_range_attr :delivery_start, :delivery_finish
 
   extend SplitDatetime::SplitMethods
   split_datetime :start
@@ -169,6 +185,14 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
   def new_or_edition?
     self.status == 'new' or self.status == 'edition'
   end
+  def after_orders?
+    now = DateTime.now
+    status == 'orders' && self.finish < now
+  end
+  def before_orders?
+    now = DateTime.now
+    status == 'orders' && self.start >= now
+  end
   def orders?
     now = DateTime.now
     status == 'orders' && ( (self.start <= now && self.finish.nil?) || (self.start <= now && self.finish >= now) )
@@ -176,6 +200,15 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
   def delivery?
     now = DateTime.now
     status == 'delivery' && ( (self.delivery_start <= now && self.delivery_finish.nil?) || (self.delivery_start <= now && self.delivery_finish >= now) )
+  end
+
+  def may_order? consumer
+    self.orders? and consumer.present? and consumer.in? profile.members
+  end
+
+  def consumer_previous_orders consumer
+    self.profile.orders_cycles_sales.where(consumer_id: consumer.id).
+      where('orders_cycle_plugin_cycle_orders.cycle_id <> ?', self.id)
   end
 
   def products_for_order
@@ -188,21 +221,18 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
     OrdersCyclePlugin::Order.supplier_products_by_suppliers orders
   end
 
-  def generate_purchases
+  def generate_purchases sales = self.sales.ordered
     return self.purchases if self.purchases.present?
 
-    self.ordered_offered_products.unarchived.group_by{ |p| p.supplier }.map do |supplier, products|
-      next unless supplier_product = product.supplier_product
-
-      # can't be created using self.purchases.create!, as if :cycle is set (needed for code numbering), then double CycleOrder will be created
-      purchase = OrdersCyclePlugin::Purchase.create! cycle: self, consumer: self.profile, profile: supplier.profile
-      products.each do |product|
-        purchase.items.create! order: purchase, product: supplier_product,
-          quantity_consumer_ordered: product.total_quantity_consumer_ordered, price_consumer_ordered: product.total_price_consumer_ordered
-      end
+    sales.each do |sale|
+      sale.add_purchases_items_without_delay
     end
 
     self.purchases true
+  end
+  def regenerate_purchases sales = self.sales.ordered
+    self.purchases.destroy_all
+    self.generate_purchases sales
   end
 
   def add_distributed_products
@@ -212,10 +242,6 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
         OrdersCyclePlugin::OfferedProduct.create_from_distributed self, product
       end
     end
-  end
-
-  def can_order? user
-    profile.members.include? user
   end
 
   def add_products_job
@@ -235,17 +261,29 @@ class OrdersCyclePlugin::Cycle < ActiveRecord::Base
     self.step if self.new?
   end
 
-  def check_status
-    # done at #step_new
-    return if self.new?
-
+  def update_orders_status
     # step orders to next_status on status change
-    return if self.status_was.blank?
-    return unless order_status = OrderStatusMap[self.status_was]
-    actor_name = StatusActorMap[self.status_was]
-    orders_method = if actor_name == :supplier then :sales else :purchases end
-    orders = self.send(orders_method).where(status: order_status.to_s)
-    orders.each{ |order| order.step! actor_name }
+    return if self.new? or self.status_was == "new" or self.status_was == self.status
+
+    # Don't rewind confirmed sales
+    unless self.status_was == 'orders' and self.status == 'edition'
+      sale_status_was = SaleStatusMap[self.status_was]
+      new_sale_status = SaleStatusMap[self.status]
+      sales = self.sales.where(status: sale_status_was.to_s)
+      sales.each do |sale|
+        sale.update_attributes status: new_sale_status.to_s
+      end
+    end
+
+    # Don't rewind confirmed purchases
+    unless self.status_was == 'receipts' and self.status == 'purchases'
+      purchase_status_was = PurchaseStatusMap[self.status_was]
+      new_purchase_status = PurchaseStatusMap[self.status]
+      purchases = self.purchases.where(status: purchase_status_was.to_s)
+      purchases.each do |purchase|
+        purchase.update_attributes status: new_purchase_status.to_s
+      end
+    end
   end
 
   def validate_orders_dates

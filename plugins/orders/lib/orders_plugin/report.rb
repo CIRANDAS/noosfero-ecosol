@@ -8,17 +8,16 @@ module OrdersPlugin::Report
     wb = p.workbook
 
     # create styles
-    redcell   = wb.styles.add_style bg_color: "E8D0DC", fg_color: "000000", sz: 8, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
-    yellowcell   = wb.styles.add_style bg_color: "FCE943", fg_color: "000000", sz: 9, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
-    defaults = {fg_color: "000000", sz: 8, alignment: { :horizontal=> :left, vertical: :center, wrap_text: false }, border: 0}
-    greencell = wb.styles.add_style(defaults.merge({bg_color: "00AE00", fg_color: "ffffff", b: true }))
-    bluecell  = wb.styles.add_style(defaults.merge({bg_color: "99CCFF", b: true}))
-    default   = wb.styles.add_style(defaults.merge({border: 0}))
+    defaults   = {fg_color: "000000", sz: 8, alignment: { :horizontal=> :left, vertical: :center, wrap_text: false }, border: 0}
+    redcell    = wb.styles.add_style bg_color: "E8D0DC", fg_color: "000000", sz: 8, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
+    yellowcell = wb.styles.add_style bg_color: "FCE943", fg_color: "000000", sz: 9, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
+    greencell  = wb.styles.add_style(defaults.merge({bg_color: "00AE00", fg_color: "ffffff", b: true }))
+    bluecell   = wb.styles.add_style(defaults.merge({bg_color: "99CCFF", b: true}))
+    default    = wb.styles.add_style(defaults.merge({border: 0}))
     #bluecell_b_top  = wb.styles.add_style(defaults.merge({bg_color: "99CCFF", b: true, border: {style: :thin, color: "FF000000", edges: [:top]}}))
     #date  = wb.styles.add_style(defaults.merge({format_code: t('lib.report.mm_dd_yy_hh_mm_am_pm')}))
-    currency  = wb.styles.add_style(defaults.merge({format_code: t('number.currency.format.xlsx_currency')}))
+    currency   = wb.styles.add_style(defaults.merge({format_code: t('number.currency.format.xlsx_currency')}))
     #border_top = wb.styles.add_style border: {style: :thin, color: "FF000000", edges: [:top]}
-
 
     # supplier block start index (shifts on the loop for each supplier)
     sbs = 3
@@ -43,7 +42,7 @@ module OrdersPlugin::Report
         sheet.add_row [supplier.abbreviation_or_name, '', supplier.profile.contact_phone, '',supplier.profile.contact_email, '', '', '', '', '', ''],
           style: default
         sbe = sbs+1
-        ["A#{sbe}:B#{sbe}","C#{sbe}:D#{sbe}", "E#{sbe}:F#{sbe}"].each {|c| sheet.merge_cells c }
+        ["A#{sbe}:B#{sbe}","C#{sbe}:D#{sbe}", "E#{sbe}:F#{sbe}"].each{ |c| sheet.merge_cells c }
 
         sheet.add_row [
           t('lib.report.product_cod'), t('lib.report.product_name'), t('lib.report.qty_ordered'),
@@ -61,7 +60,7 @@ module OrdersPlugin::Report
           stock_value = 0
           unit = product.unit.singular rescue ''
           total_price_formula = "=F#{pl}*I#{pl}"
-          total_price_value = product.quantity_ordered * product.price
+          total_price_value = product.quantity_ordered * product.price rescue 0
 
           #FIXME: correct this calc for stock
           selled_sum += total_price_value
@@ -122,16 +121,16 @@ module OrdersPlugin::Report
     wb = p.workbook
 
     # create styles
-    defaults = {fg_color: "000000", sz: 8, alignment: {horizontal: :left, vertical: :center, wrap_text: true}, border: 0}
-    greencell = wb.styles.add_style(defaults.merge({bg_color: "00AE00", fg_color: "ffffff", b: true }))
-    bluecell  = wb.styles.add_style(defaults.merge({bg_color: "99CCFF", b: true}))
-    default   = wb.styles.add_style(defaults.merge({border: 0}))
+    defaults   = {fg_color: "000000", sz: 8, alignment: {horizontal: :left, vertical: :center, wrap_text: true}, border: 0}
+    greencell  = wb.styles.add_style(defaults.merge({bg_color: "00AE00", fg_color: "ffffff", b: true }))
+    bluecell   = wb.styles.add_style(defaults.merge({bg_color: "99CCFF", b: true}))
+    default    = wb.styles.add_style(defaults.merge({border: 0}))
     bluecell_b_top  = wb.styles.add_style(defaults.merge({bg_color: "99CCFF", b: true, border: {style: :thin, color: "FF000000", edges: [:top]}}))
-    date  = wb.styles.add_style(defaults.merge({format_code: t('lib.report.mm_dd_yy_hh_mm_am_pm')}))
-    currency  = wb.styles.add_style(defaults.merge({format_code: t('number.currency.format.xlsx_currency')}))
+    date       = wb.styles.add_style(defaults.merge({format_code: t('lib.report.mm_dd_yy_hh_mm_am_pm')}))
+    currency   = wb.styles.add_style(defaults.merge({format_code: t('number.currency.format.xlsx_currency')}))
     #border_top = wb.styles.add_style border: {style: :thin, color: "FF000000", edges: [:top]}
-    redcell   = wb.styles.add_style bg_color: "E8D0DC", fg_color: "000000", sz: 8, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
-    yellowcell   = wb.styles.add_style bg_color: "FCE943", fg_color: "000000", sz: 9, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
+    redcell    = wb.styles.add_style bg_color: "E8D0DC", fg_color: "000000", sz: 8, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
+    yellowcell = wb.styles.add_style bg_color: "FCE943", fg_color: "000000", sz: 9, b: true, wrap_text: true, alignment: { :horizontal=> :left }, border: 0
 
     # create sheet and populates
     wb.add_worksheet(name: t('lib.report.closed_orders')) do |sheet|
@@ -146,27 +145,31 @@ module OrdersPlugin::Report
       orders.each do |order|
 
         sheet.add_row [t('lib.report.order_code'), t('lib.report.member_name'), '', t('lib.report.phone'), '', t('lib.report.mail'), ''], style: bluecell_b_top
-        ["B#{sbs}:C#{sbs}","D#{sbs}:E#{sbs}", "F#{sbs}:G#{sbs}"].each {|c| sheet.merge_cells c }
-
+        ["B#{sbs}:C#{sbs}", "D#{sbs}:E#{sbs}", "F#{sbs}:G#{sbs}"].each{ |c| sheet.merge_cells c }
+        sbs += 1
         sheet.add_row [order.code, order.consumer_data[:name], '',order.consumer_data[:contact_phone],'',order.consumer_data[:email],''], style: default
+        ["B#{sbs}:C#{sbs}", "D#{sbs}:E#{sbs}", "F#{sbs}:G#{sbs}"].each{ |c| sheet.merge_cells c }
 
-        ["B#{sbs+1}:C#{sbs+1}","D#{sbs+1}:E#{sbs+1}", "F#{sbs+1}:G#{sbs+1}"].each {|c| sheet.merge_cells c }
-
-        sheet.add_row [t('lib.report.created'), t('lib.report.modified'), '','', '','',''], style: bluecell
-
+        sbs += 1
+        sheet.add_row [t('lib.report.created'), t('lib.report.modified'), t('lib.report.payment_method'), t('lib.report.delivery_option'), '','',''],
+          style: bluecell
+        ["D#{sbs}:E#{sbs}"].each{ |c| sheet.merge_cells c }
         # sp = index of the start of the products list / ep = index of the end of the products list
-        sp = sbs + 5
+        sp = sbs + 3
         productsEnd = ep = sp + order.items.count - 1
-        sheet.add_row [order.created_at, order.updated_at, '', '', '', '','',''], style: [date,date]
-
+        payment_method = _ OrdersPlugin::Order::PaymentMethods[order.payment_data[:method].to_sym].call rescue ''
+        sheet.add_row [order.created_at, order.updated_at, payment_method, order.supplier_delivery_data[:name], '', '','',''],
+          style: [date, date, default, default]
+        sbs += 1
         sheet.add_row [t('lib.report.product_cod'), t('lib.report.supplier'), t('lib.report.product_name'),
                        t('lib.report.qty_ordered'),t('lib.report.un'),t('lib.report.price_un'), t('lib.report.value')], style: greencell
+        ["D#{sbs}:E#{sbs}"].each{ |c| sheet.merge_cells c }
 
         sbe = sp
         sum = 0
         order.items.each do |item|
 
-          formula_value = item.price*item.quantity_consumer_ordered
+          formula_value = item.price * item.status_quantity rescue 0
           formula_value_s = CurrencyHelper.localized_number(formula_value)
           unit = item.product.unit.singular rescue ''
 
@@ -179,12 +182,12 @@ module OrdersPlugin::Report
           supplier_name = item.suppliers.first.abbreviation_or_name rescue item.order.profile.name
 
           sheet.add_row [id, supplier_name,
-                         item.name, item.quantity_consumer_ordered,
+                         item.name, item.status_quantity,
                          unit, item.product.price,
                          "=F#{sbe}*D#{sbe}"],
           style: [default,default,default,default,default,currency,currency],
           formula_values: [nil,nil,nil,nil,nil,nil,formula_value_s]
-          selled_sum += item.quantity_consumer_ordered*item.price
+          selled_sum += item.status_quantity * item.price rescue 0
 
           sbe += 1
           sum += formula_value

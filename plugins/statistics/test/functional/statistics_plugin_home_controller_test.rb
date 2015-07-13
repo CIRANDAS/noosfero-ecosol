@@ -1,7 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
-
-# Re-raise errors caught by the controller.
-class HomeController; def rescue_action(e) raise e end; end
+require_relative '../test_helper'
 
 class HomeControllerTest < ActionController::TestCase
 
@@ -72,6 +69,24 @@ class HomeControllerTest < ActionController::TestCase
     get :index
 
     assert_no_tag :tag => 'div', :attributes => {:class => 'statistics-block-data'}, :descendant => { :tag => 'li', :attributes => {:class => 'enterprises'} }
+  end
+
+  should 'display products class in statistics-block-data block' do
+    @block.product_counter = true
+    @environment.enable('products_for_enterprises')
+    @block.save!
+    get :index
+
+    assert_tag :tag => 'div', :attributes => {:class => 'statistics-block-data'}, :descendant => { :tag => 'li', :attributes => {:class => 'products'} }
+  end
+
+  should 'not display products class in statistics-block-data block' do
+    @block.product_counter = true
+    @environment.disable('products_for_enterprises')
+    @block.save!
+    get :index
+
+    assert_no_tag :tag => 'div', :attributes => {:class => 'statistics-block-data'}, :descendant => { :tag => 'li', :attributes => {:class => 'products'} }
   end
 
   should 'display categories class in statistics-block-data block' do

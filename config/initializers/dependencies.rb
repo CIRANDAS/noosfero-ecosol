@@ -1,3 +1,17 @@
+require 'pp'
+
+# third-party libraries
+require 'will_paginate'
+require 'will_paginate/array'
+require 'nokogiri'
+
+# dependencies at vendor, firstly loaded on Gemfile
+vendor = Dir.glob('vendor/{,plugins/}*') - ['vendor/plugins']
+vendor.each do |dir|
+  init_rb = "#{Rails.root}/#{dir}/init.rb"
+  require init_rb if File.file? init_rb
+end
+
 # locally-developed modules
 require 'acts_as_filesystem'
 require 'acts_as_having_settings'
@@ -13,17 +27,4 @@ require 'white_list_filter'
 
 # ruby exts
 require 'super_proxy'
-
-# third-party libraries
-require 'will_paginate'
-require 'will_paginate/array'
-require 'nokogiri'
-
-require 'fast_blank'
-# THESE DON'T HELP!
-#require 'escape_utils' #require 'escape_utils/html/rack' # to patch Rack::Utils
-#require 'escape_utils/html/erb' # to patch ERB::Util
-#require 'escape_utils/html/cgi' # to patch CGI
-#require 'escape_utils/url/uri' # to patch URI
-#require 'escape_utils/javascript/action_view' # to patch ActionView::Helpers::JavaScriptHelper
 

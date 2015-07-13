@@ -51,10 +51,30 @@ module Noosfero
       yield
       FastGettext.set_locale(orig_locale)
     end
+
+    def session_secret
+      require 'fileutils'
+      target_dir = File.join(File.dirname(__FILE__), '../tmp')
+      FileUtils.mkdir_p(target_dir)
+      file = File.join(target_dir, 'session.secret')
+      if !File.exists?(file)
+        secret = (1..128).map { %w[0 1 2 3 4 5 6 7 8 9 a b c d e f][rand(16)] }.join('')
+        File.open(file, 'w') do |f|
+          f.puts secret
+        end
+      end
+      File.read(file).strip
+    end
   end
 
   def self.identifier_format
     '[a-z0-9][a-z0-9~.]*([_\-][a-z0-9~.|:*]+)*'
+  end
+
+  # All valid identifiers, plus ~ meaning "the current user". See
+  # ApplicationController#redirect_to_current_user
+  def self.identifier_format_in_url
+    "(#{identifier_format}|~)"
   end
 
   def self.default_hostname
@@ -68,16 +88,6 @@ module Noosfero
     app_controller_path.map do |item|
       item.gsub(/^.*\/([^\/]+)_controller.rb$/, '\1')
     end
-  end
-
-  def self.term(t)
-    self.terminology.get(t)
-  end
-  def self.terminology
-    @terminology ||= Noosfero::Terminology::Default.instance
-  end
-  def self.terminology=(term)
-    @terminology = term
   end
 
   def self.url_options

@@ -1,6 +1,6 @@
-require "#{File.dirname(__FILE__)}/../test_helper"
+require_relative "../test_helper"
 
-class OnlineDocTest < ActionController::IntegrationTest
+class OnlineDocTest < ActionDispatch::IntegrationTest
 
   def test_404_section
     get '/doc/something-very-unlikely'

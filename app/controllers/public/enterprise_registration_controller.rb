@@ -3,8 +3,11 @@ class EnterpriseRegistrationController < ApplicationController
 
   before_filter :login_required
 
+  # CIRANDAS specific: only allow admins to access this
+  protect 'edit_environment_features', :environment
+
   # Just go to the first step.
-  # 
+  #
   # FIXME: shouldn't this action present some sort of welcome message and point
   # to the first step explicitly?
   def index
@@ -21,7 +24,7 @@ class EnterpriseRegistrationController < ApplicationController
     the_action =
       if request.post?
         if @create_enterprise.valid_before_selecting_target?
-          if @create_enterprise.valid? && @validation == :none
+          if @create_enterprise.valid? || @validation == :none
             :creation
           elsif @create_enterprise.valid? || @validation == :admin
             :confirmation
@@ -33,14 +36,14 @@ class EnterpriseRegistrationController < ApplicationController
 
     # default to basic_information
     the_action ||= :basic_information
-
-    send(the_action)
+    # fallback if false is returned
+    the_action = :basic_information if not self.send the_action
     render :action => the_action
   end
 
   protected
 
-  # Fill in the form and select your Region. 
+  # Fill in the form and select your Region.
   #
   # Posts back.
   def basic_information
@@ -61,14 +64,16 @@ class EnterpriseRegistrationController < ApplicationController
   # confirmation message saying to the user that the enterprise register
   # request was done.
   def confirmation
-    @create_enterprise.save!
+    @create_enterprise.save
   end
 
   # Records the enterprise and presents a confirmation message
   # saying to the user that the enterprise was created.
   def creation
-    @create_enterprise.perform
-    @enterprise = @create_enterprise.target.profiles.find_by_identifier(@create_enterprise.identifier)
+    if @create_enterprise.save
+      @create_enterprise.perform
+      @enterprise = @create_enterprise.target.profiles.find_by_identifier(@create_enterprise.identifier)
+    end
   end
 
 end

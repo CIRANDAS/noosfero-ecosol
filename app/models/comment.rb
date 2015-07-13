@@ -1,9 +1,9 @@
 class Comment < ActiveRecord::Base
 
   SEARCHABLE_FIELDS = {
-    :title => 10,
-    :name => 4,
-    :body => 2,
+    :title => {:label => _('Title'), :weight => 10},
+    :name => {:label => _('Name'), :weight => 4},
+    :body => {:label => _('Content'), :weight => 2},
   }
 
   attr_accessible :body, :author, :name, :email, :title, :reply_of_id, :source
@@ -18,7 +18,7 @@ class Comment < ActiveRecord::Base
   has_many :children, :class_name => 'Comment', :foreign_key => 'reply_of_id', :dependent => :destroy
   belongs_to :reply_of, :class_name => 'Comment', :foreign_key => 'reply_of_id'
 
-  scope :without_reply, :conditions => ['reply_of_id IS NULL']
+  scope :without_reply, -> { where 'reply_of_id IS NULL' }
 
   # unauthenticated authors:
   validates_presence_of :name, :if => (lambda { |record| !record.email.blank? })
@@ -33,7 +33,11 @@ class Comment < ActiveRecord::Base
     end
   end
 
+  acts_as_having_settings
+
   xss_terminate :only => [ :body, :title, :name ], :on => 'validation'
+
+  acts_as_voteable
 
   def comment_root
     (reply_of && reply_of.comment_root) || self
@@ -145,11 +149,11 @@ class Comment < ActiveRecord::Base
   def notify_by_mail
     if source.kind_of?(Article) && article.notify_comments?
       if !notification_emails.empty?
-        Comment::Notifier.notification(self).deliver
+        CommentNotifier.notification(self).deliver
       end
       emails = article.followers - [author_email]
       if !emails.empty?
-        Comment::Notifier.mail_to_followers(self, emails).deliver
+        CommentNotifier.mail_to_followers(self, emails).deliver
       end
     end
   end

@@ -1,8 +1,11 @@
-sources_entry='deb http://download.noosfero.org/debian/wheezy ./'
+binary_packages='deb http://download.noosfero.org/debian/wheezy-1.2 ./'
 
-if ! grep -q "$sources_entry" /etc/apt/sources.list.d/noosfero.list; then
+source_packages=$(echo "$binary_packages" | sed -e 's/^deb/deb-src/')
+
+if ! grep -q "$binary_packages" /etc/apt/sources.list.d/noosfero.list; then
   sudo tee /etc/apt/sources.list.d/noosfero.list <<EOF
-$sources_entry
+$binary_packages
+$source_packages
 EOF
 
   sudo apt-key add - <<EOF
@@ -50,6 +53,13 @@ FPQAoNmiMgP6zGF9rgOEWMEiFEryayrz
 EOF
 fi
 
+if grep -qrl wheezy /etc/apt/sources.list* && ! grep -qrl wheezy-backports /etc/apt/sources.list*; then
+  sudo tee /etc/apt/sources.list.d/backports.list <<EOF
+deb http://httpredir.debian.org/debian wheezy-backports main
+EOF
+fi
+
+
 if test -f tmp/debian/Release.gpg; then
   echo "deb file://$(pwd)/tmp/debian/ ./" | sudo tee /etc/apt/sources.list.d/local.list
   sudo apt-key add tmp/debian/signing-key.asc
@@ -62,9 +72,13 @@ run sudo apt-get -qy dist-upgrade
 
 run sudo apt-get -y install dctrl-tools
 
+# *sigh* need ruby-rspec from backports
+run sudo apt-get -y install -t wheezy-backports ruby-rspec
+
 # needed to run noosfero
-packages=$(grep-dctrl -n -s Build-Depends,Depends,Recommends -S -X noosfero debian/control | sed -e 's/([^)]*)//g; s/,\s*/\n/g' | grep -v 'memcached\|debconf\|dbconfig-common\|misc:Depends\|adduser\|mail-transport-agent')
+packages=$(grep-dctrl -n -s Build-Depends,Depends,Recommends -S -X noosfero debian/control | sed -e '/^\s*#/d; s/([^)]*)//g; s/,\s*/\n/g' | grep -v 'memcached\|debconf\|dbconfig-common\|misc:Depends\|adduser\|mail-transport-agent')
 run sudo apt-get -y install $packages
 sudo apt-get -y install iceweasel || sudo apt-get -y install firefox
 
+run rm -f Gemfile.lock
 run bundle --local

@@ -68,8 +68,8 @@ class BoxOrganizerController < ApplicationController
         raise ArgumentError.new("Type %s is not allowed. Go away." % type)
       end
     else
-      @center_block_types = (Box.acceptable_center_blocks & available_blocks) + plugins.dispatch(:extra_blocks, :type => boxes_holder.class, :position => 1)
-      @side_block_types = (Box.acceptable_side_blocks & available_blocks) + plugins.dispatch(:extra_blocks, :type => boxes_holder.class, :position => [2,3])
+      @center_block_types = (Box.acceptable_center_blocks & available_blocks) + plugins_extra_blocks(:type => boxes_holder.class, :position => 1)
+      @side_block_types = (Box.acceptable_side_blocks & available_blocks) + plugins_extra_blocks(:type => boxes_holder.class, :position => [2,3])
       @boxes = boxes_holder.boxes.with_position
       render :action => 'add_block', :layout => false
     end
@@ -84,9 +84,9 @@ class BoxOrganizerController < ApplicationController
     if request.xhr? and params[:query]
       search = params[:query]
       path_list = if boxes_holder.is_a?(Environment) && boxes_holder.enabled?('use_portal_community') && boxes_holder.portal_community
-        boxes_holder.portal_community.articles.find(:all, :conditions=>"name ILIKE '%#{search}%' or path ILIKE '%#{search}%'", :limit=>20).map { |content| "/{portal}/"+content.path }
+                    boxes_holder.portal_community.articles.where("name ILIKE ? OR path ILIKE ?", "%#{search}%", "%#{search}%").limit(20).map { |content| "/{portal}/"+content.path }
       elsif boxes_holder.is_a?(Profile)
-        boxes_holder.articles.find(:all, :conditions=>"name ILIKE '%#{search}%' or path ILIKE '%#{search}%'", :limit=>20).map { |content| "/{profile}/"+content.path }
+        boxes_holder.articles.where("name ILIKE ? OR path ILIKE ?", "%#{search}%", "%#{search}%").limit(20).map { |content| "/{profile}/"+content.path }
       else
         []
       end

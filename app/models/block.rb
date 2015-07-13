@@ -1,6 +1,8 @@
 class Block < ActiveRecord::Base
 
-  attr_accessible :title, :display, :limit, :box_id, :posts_per_page, :visualization_format, :language, :display_user, :box
+  attr_accessible :title, :display, :limit, :box_id, :posts_per_page,
+                  :visualization_format, :language, :display_user,
+                  :box, :edit_modes, :move_modes, :mirror
 
   # to be able to generate HTML
   include ActionView::Helpers::UrlHelper
@@ -13,10 +15,22 @@ class Block < ActiveRecord::Base
 
   acts_as_list :scope => :box
   belongs_to :box
+  belongs_to :mirror_block, :class_name => "Block"
+  has_many :observers, :class_name => "Block", :foreign_key => "mirror_block_id"
 
   acts_as_having_settings
 
-  scope :enabled, :conditions => { :enabled => true }
+  scope :enabled, -> { where :enabled => true }
+
+  after_save do |block|
+    if block.owner.kind_of?(Profile) && block.owner.is_template? && block.mirror?
+      block.observers.each do |observer|
+        observer.copy_from(block)
+        observer.title = block.title
+        observer.save
+      end
+    end
+  end
 
   def embedable?
     false
@@ -64,7 +78,7 @@ class Block < ActiveRecord::Base
   end
 
   def display_to_user?(user)
-    display_user == 'all' || (user.nil? && display_user == 'not_logged') || (user && display_user == 'logged')
+    display_user == 'all' || (user.nil? && display_user == 'not_logged') || (user && display_user == 'logged') || (user && display_user == 'followers' && user.follows?(owner))
   end
 
   def display_always(context)
@@ -75,7 +89,7 @@ class Block < ActiveRecord::Base
     if context[:article]
       return context[:article] == owner.home_page
     else
-      return context[:request_path] == '/'
+      return home_page_path?(context[:request_path])
     end
   end
 
@@ -83,7 +97,7 @@ class Block < ActiveRecord::Base
     if context[:article]
       return context[:article] != owner.home_page
     else
-      return context[:request_path] != '/' + (owner.kind_of?(Profile) ? owner.identifier : '')
+      return !home_page_path?(context[:request_path])
     end
   end
 
@@ -109,6 +123,14 @@ class Block < ActiveRecord::Base
   #
   # * <tt>'all'</tt>: the block is always displayed
   settings_items :language, :type => :string, :default => 'all'
+
+  # The block can be configured to define the edition modes options. Only can be edited by environment admins
+  # It can assume the following values:
+  #
+  # * <tt>'all'</tt>: the block owner has all edit options for this block
+  # * <tt>'none'</tt>: the block owner can't do anything with the block
+  settings_items :edit_modes, :type => :string, :default => 'all'
+  settings_items :move_modes, :type => :string, :default => 'all'
 
   # returns the description of the block, used when the user sees a list of
   # blocks to choose one to include in the design.
@@ -145,7 +167,11 @@ class Block < ActiveRecord::Base
 
   # Is this block editable? (Default to <tt>false</tt>)
   def editable?
-    true
+    self.edit_modes == "all"
+  end
+
+  def movable?
+    self.move_modes == "all"
   end
 
   # must always return false, except on MainBlock clas.
@@ -221,8 +247,24 @@ class Block < ActiveRecord::Base
       'all'            => _('All users'),
       'logged'         => _('Logged'),
       'not_logged'     => _('Not logged'),
+      'followers'      => owner.class != Environment && owner.organization? ? _('Members') : _('Friends')
     }
   end
+
+  def edit_block_options
+    @edit_options ||= {
+      'all'            => _('Can be modified'),
+      'none'           => _('Cannot be modified')
+    }
+  end
+
+  def move_block_options
+    @move_options ||= {
+      'all'            => _('Can be moved'),
+      'none'           => _('Cannot be moved')
+    }
+  end
+
 
   def duplicate
     duplicated_block = self.dup
@@ -237,6 +279,27 @@ class Block < ActiveRecord::Base
   def copy_from(block)
     self.settings = block.settings
     self.position = block.position
+  end
+
+  def add_observer(block)
+    self.observers << block
+  end
+
+  private
+
+  def home_page_path
+    home_page_url = Noosfero.root('/')
+
+    if owner.kind_of?(Profile)
+      home_page_url += "profile/" if owner.home_page.nil?
+      home_page_url += owner.identifier
+    end
+
+    return home_page_url
+  end
+
+  def home_page_path? path
+    return path == home_page_path || path == (home_page_path + '/')
   end
 
 end

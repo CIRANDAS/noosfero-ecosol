@@ -1,10 +1,15 @@
 class EventsController < PublicController
 
   needs_profile
+  before_filter :allow_access_to_page
 
   def events
     @events = []
-    @date = build_date(params[:year], params[:month], params[:day])
+    begin
+      @date = build_date params[:year], params[:month], params[:day]
+    rescue ArgumentError # invalid date
+      return render_not_found
+    end
 
     if !params[:year] && !params[:month] && !params[:day]
       @events = profile.events.next_events_from_month(@date).paginate(:per_page => per_page, :page => params[:page])
@@ -22,7 +27,6 @@ class EventsController < PublicController
   def events_by_day
     @date = build_date(params[:year], params[:month], params[:day])
     @events = profile.events.by_day(@date).paginate(:per_page => per_page, :page => params[:page])
-    @title_use_day = params[:day].blank? ? false : true
     render :partial => 'events'
   end
 

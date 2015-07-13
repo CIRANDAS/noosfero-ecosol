@@ -11,7 +11,7 @@
 #
 # It's strongly recommended to check this file into your version control system.
 
-ActiveRecord::Schema.define(:version => 20150113184049) do
+ActiveRecord::Schema.define(:version => 20150603182105) do
 
   create_table "abuse_reports", :force => true do |t|
     t.integer  "reporter_id"
@@ -150,6 +150,7 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.integer  "spam_comments_count",  :default => 0
     t.integer  "author_id"
     t.integer  "created_by_id"
+    t.boolean  "show_to_followers",    :default => true
   end
 
   add_index "articles", ["comments_count"], :name => "index_articles_on_comments_count"
@@ -181,10 +182,13 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.string   "type"
     t.text     "settings"
     t.integer  "position"
-    t.boolean  "enabled",    :default => true
+    t.boolean  "enabled",         :default => true
     t.datetime "created_at"
     t.datetime "updated_at"
     t.datetime "fetched_at"
+    t.boolean  "mirror",          :default => false
+    t.integer  "mirror_block_id"
+    t.integer  "observers_id"
   end
 
   add_index "blocks", ["box_id"], :name => "index_blocks_on_box_id"
@@ -199,6 +203,12 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
   end
 
   add_index "boxes", ["owner_type", "owner_id"], :name => "index_boxes_on_owner_type_and_owner_id"
+
+  create_table "br_nivel2", :id => false, :force => true do |t|
+    t.string "cidade"
+    t.float  "lat"
+    t.float  "lng"
+  end
 
   create_table "bsc_plugin_contracts", :force => true do |t|
     t.string   "client_name"
@@ -273,12 +283,16 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
   end
 
   create_table "chat_messages", :force => true do |t|
-    t.integer  "to_id"
     t.integer  "from_id"
-    t.string   "body"
+    t.integer  "to_id"
+    t.text     "body"
     t.datetime "created_at", :null => false
     t.datetime "updated_at", :null => false
   end
+
+  add_index "chat_messages", ["created_at"], :name => "index_chat_messages_on_created_at"
+  add_index "chat_messages", ["from_id"], :name => "index_chat_messages_on_from_id"
+  add_index "chat_messages", ["to_id"], :name => "index_chat_messages_on_to_id"
 
   create_table "comment_classification_plugin_comment_label_user", :force => true do |t|
     t.integer  "profile_id"
@@ -332,6 +346,7 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.string   "user_agent"
     t.string   "referrer"
     t.integer  "group_id"
+    t.text     "settings"
   end
 
   add_index "comments", ["source_id", "spam"], :name => "index_comments_on_source_id_and_spam"
@@ -423,6 +438,8 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.string   "delivery_type"
     t.datetime "created_at"
     t.datetime "updated_at"
+    t.decimal  "fixed_cost"
+    t.decimal  "free_over_price"
   end
 
   add_index "delivery_plugin_methods", ["profile_id"], :name => "index_distribution_plugin_delivery_methods_on_node_id"
@@ -461,18 +478,19 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.text     "design_data"
     t.text     "custom_header"
     t.text     "custom_footer"
-    t.string   "theme",                        :default => "default",           :null => false
+    t.string   "theme",                        :default => "default",              :null => false
     t.text     "terms_of_use_acceptance_text"
     t.datetime "created_at"
     t.datetime "updated_at"
     t.text     "send_email_plugin_allow_to"
-    t.integer  "reports_lower_bound",          :default => 0,                   :null => false
+    t.integer  "reports_lower_bound",          :default => 0,                      :null => false
     t.string   "languages"
     t.string   "default_language"
     t.string   "redirection_after_login",      :default => "keep_on_same_page"
     t.text     "signup_welcome_text"
     t.string   "noreply_email"
     t.string   "redirection_after_signup",     :default => "keep_on_same_page"
+    t.string   "date_format",                  :default => "month_name_with_year"
   end
 
   create_table "external_feeds", :force => true do |t|
@@ -492,10 +510,16 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
   add_index "external_feeds", ["enabled"], :name => "index_external_feeds_on_enabled"
   add_index "external_feeds", ["fetched_at"], :name => "index_external_feeds_on_fetched_at"
 
-  create_table "favorite_enteprises_people", :id => false, :force => true do |t|
-    t.integer "person_id"
-    t.integer "enterprise_id"
+  create_table "favorite_enterprise_people", :force => true do |t|
+    t.integer  "person_id"
+    t.integer  "enterprise_id"
+    t.datetime "created_at"
+    t.datetime "updated_at"
   end
+
+  add_index "favorite_enterprise_people", ["enterprise_id"], :name => "index_favorite_enterprise_people_on_enterprise_id"
+  add_index "favorite_enterprise_people", ["person_id", "enterprise_id"], :name => "index_favorite_enterprise_people_on_person_id_and_enterprise_id"
+  add_index "favorite_enterprise_people", ["person_id"], :name => "index_favorite_enterprise_people_on_person_id"
 
   create_table "fb_app_plugin_page_tab_configs", :force => true do |t|
     t.string   "page_id"
@@ -528,6 +552,7 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.integer "width"
     t.integer "height"
     t.boolean "thumbnails_processed", :default => false
+    t.string  "label",                :default => ""
   end
 
   add_index "images", ["parent_id"], :name => "index_images_on_parent_id"
@@ -695,7 +720,8 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
 
   create_table "open_graph_plugin_tracks", :force => true do |t|
     t.string   "type"
-    t.string   "scope"
+    t.string   "context"
+    t.boolean  "enabled",          :default => true
     t.integer  "tracker_id"
     t.integer  "actor_id"
     t.string   "action"
@@ -703,19 +729,18 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.text     "object_data_url"
     t.integer  "object_data_id"
     t.string   "object_data_type"
-    t.boolean  "enabled",          :default => true
     t.datetime "created_at",                         :null => false
     t.datetime "updated_at",                         :null => false
   end
 
   add_index "open_graph_plugin_tracks", ["action"], :name => "index_open_graph_plugin_tracks_on_action"
   add_index "open_graph_plugin_tracks", ["actor_id"], :name => "index_open_graph_plugin_tracks_on_actor_id"
+  add_index "open_graph_plugin_tracks", ["context"], :name => "index_open_graph_plugin_tracks_on_context"
   add_index "open_graph_plugin_tracks", ["enabled"], :name => "index_open_graph_plugin_tracks_on_enabled"
   add_index "open_graph_plugin_tracks", ["object_data_id", "object_data_type"], :name => "index_open_graph_plugin_tracks_object_data_id_type"
   add_index "open_graph_plugin_tracks", ["object_data_url"], :name => "index_open_graph_plugin_tracks_on_object_data_url"
   add_index "open_graph_plugin_tracks", ["object_type"], :name => "index_open_graph_plugin_tracks_on_object_type"
-  add_index "open_graph_plugin_tracks", ["scope"], :name => "index_open_graph_plugin_tracks_on_scope"
-  add_index "open_graph_plugin_tracks", ["type", "scope"], :name => "index_open_graph_plugin_tracks_on_type_and_scope"
+  add_index "open_graph_plugin_tracks", ["type", "context"], :name => "index_open_graph_plugin_tracks_on_type_and_context"
   add_index "open_graph_plugin_tracks", ["type"], :name => "index_open_graph_plugin_tracks_on_type"
 
   create_table "orders_cycle_plugin_cycle_orders", :force => true do |t|
@@ -787,6 +812,7 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.integer  "unit_id_supplier_separated"
     t.integer  "unit_id_supplier_delivered"
     t.integer  "unit_id_consumer_received"
+    t.string   "type"
   end
 
   add_index "orders_plugin_items", ["order_id"], :name => "index_distribution_plugin_ordered_products_on_order_id"
@@ -867,11 +893,40 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.string   "type"
     t.text     "data"
     t.boolean  "archived",            :default => false
+    t.boolean  "visible",             :default => true
   end
 
   add_index "products", ["created_at"], :name => "index_products_on_created_at"
   add_index "products", ["product_category_id"], :name => "index_products_on_product_category_id"
   add_index "products", ["profile_id"], :name => "index_products_on_enterprise_id"
+  add_index "products", ["visible"], :name => "index_products_on_visible"
+
+  create_table "profile_activities", :force => true do |t|
+    t.integer  "profile_id"
+    t.integer  "activity_id"
+    t.string   "activity_type"
+    t.datetime "created_at",    :null => false
+    t.datetime "updated_at",    :null => false
+  end
+
+  add_index "profile_activities", ["activity_id", "activity_type"], :name => "index_profile_activities_on_activity_id_and_activity_type"
+  add_index "profile_activities", ["activity_type"], :name => "index_profile_activities_on_activity_type"
+  add_index "profile_activities", ["profile_id"], :name => "index_profile_activities_on_profile_id"
+
+  create_table "profile_suggestions", :force => true do |t|
+    t.integer  "person_id"
+    t.integer  "suggestion_id"
+    t.string   "suggestion_type"
+    t.text     "categories"
+    t.boolean  "enabled",         :default => true
+    t.float    "score",           :default => 0.0
+    t.datetime "created_at",                        :null => false
+    t.datetime "updated_at",                        :null => false
+  end
+
+  add_index "profile_suggestions", ["person_id"], :name => "index_profile_suggestions_on_person_id"
+  add_index "profile_suggestions", ["score"], :name => "index_profile_suggestions_on_score"
+  add_index "profile_suggestions", ["suggestion_id"], :name => "index_profile_suggestions_on_suggestion_id"
 
   create_table "profiles", :force => true do |t|
     t.string   "name"
@@ -914,6 +969,10 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.string   "personal_website"
     t.string   "jabber_id"
     t.string   "usp_id"
+    t.integer  "welcome_page_id"
+    t.boolean  "allow_members_to_invite", :default => true
+    t.boolean  "invite_friends_only",     :default => false
+    t.boolean  "secret",                  :default => false
   end
 
   add_index "profiles", ["activities_count"], :name => "index_profiles_on_activities_count"
@@ -977,6 +1036,7 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.string  "key"
     t.boolean "system",         :default => false
     t.integer "environment_id"
+    t.integer "profile_id"
   end
 
   create_table "scraps", :force => true do |t|
@@ -987,6 +1047,31 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.datetime "created_at"
     t.datetime "updated_at"
   end
+
+  create_table "search_term_occurrences", :force => true do |t|
+    t.integer  "search_term_id"
+    t.datetime "created_at"
+    t.integer  "total",          :default => 0
+    t.integer  "indexed",        :default => 0
+  end
+
+  add_index "search_term_occurrences", ["created_at"], :name => "index_search_term_occurrences_on_created_at"
+
+  create_table "search_terms", :force => true do |t|
+    t.string  "term"
+    t.integer "context_id"
+    t.string  "context_type"
+    t.string  "asset",            :default => "all"
+    t.float   "score",            :default => 0.0
+    t.float   "relevance_score",  :default => 0.0
+    t.float   "occurrence_score", :default => 0.0
+  end
+
+  add_index "search_terms", ["asset"], :name => "index_search_terms_on_asset"
+  add_index "search_terms", ["occurrence_score"], :name => "index_search_terms_on_occurrence_score"
+  add_index "search_terms", ["relevance_score"], :name => "index_search_terms_on_relevance_score"
+  add_index "search_terms", ["score"], :name => "index_search_terms_on_score"
+  add_index "search_terms", ["term"], :name => "index_search_terms_on_term"
 
   create_table "sessions", :force => true do |t|
     t.string   "session_id", :null => false
@@ -1007,6 +1092,20 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.datetime "updated_at"
   end
 
+  create_table "smssync_plugin_messages", :force => true do |t|
+    t.string   "uuid"
+    t.integer  "chat_message_id"
+    t.integer  "from_profile_id"
+    t.integer  "to_profile_id"
+    t.string   "from"
+    t.string   "sent_to"
+    t.string   "device_id"
+    t.text     "message"
+    t.datetime "sent_timestamp"
+    t.datetime "created_at",      :null => false
+    t.datetime "updated_at",      :null => false
+  end
+
   create_table "sub_organizations_plugin_approve_paternity_relations", :force => true do |t|
     t.integer "task_id"
     t.integer "parent_id"
@@ -1022,10 +1121,16 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.string  "child_type"
   end
 
+  create_table "suggestion_connections", :force => true do |t|
+    t.integer "suggestion_id",   :null => false
+    t.integer "connection_id",   :null => false
+    t.string  "connection_type", :null => false
+  end
+
   create_table "suppliers_plugin_source_products", :force => true do |t|
     t.integer  "from_product_id"
     t.integer  "to_product_id"
-    t.decimal  "quantity",        :default => 0.0
+    t.decimal  "quantity",        :default => 1.0
     t.datetime "created_at"
     t.datetime "updated_at"
     t.integer  "supplier_id"
@@ -1046,7 +1151,15 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.datetime "created_at"
     t.datetime "updated_at"
     t.integer  "profile_id"
-    t.boolean  "active",            :default => true
+    t.boolean  "active",              :default => true
+    t.string   "qualifiers"
+    t.string   "tags"
+    t.boolean  "use_strategic_info"
+    t.boolean  "use_contact"
+    t.boolean  "use_registry"
+    t.boolean  "use_geolocalization"
+    t.string   "lat"
+    t.string   "lng"
   end
 
   add_index "suppliers_plugin_suppliers", ["consumer_id"], :name => "index_distribution_plugin_suppliers_on_consumer_id"
@@ -1064,12 +1177,14 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
   end
 
   add_index "taggings", ["tag_id", "taggable_id", "taggable_type", "context", "tagger_id", "tagger_type"], :name => "taggings_idx", :unique => true
+  add_index "taggings", ["taggable_id", "taggable_type", "context"], :name => "index_taggings_on_taggable_id_and_taggable_type_and_context"
   add_index "taggings", ["taggable_id", "taggable_type"], :name => "index_taggings_on_taggable_id_and_taggable_type"
 
   create_table "tags", :force => true do |t|
     t.string  "name"
     t.integer "parent_id"
-    t.boolean "pending",   :default => false
+    t.boolean "pending",        :default => false
+    t.integer "taggings_count", :default => 0
   end
 
   add_index "tags", ["name"], :name => "index_tags_on_name", :unique => true
@@ -1081,13 +1196,15 @@ ActiveRecord::Schema.define(:version => 20150113184049) do
     t.date     "end_date"
     t.integer  "requestor_id"
     t.integer  "target_id"
-    t.string   "code",         :limit => 40
+    t.string   "code",           :limit => 40
     t.string   "type"
     t.datetime "created_at"
     t.string   "target_type"
     t.integer  "image_id"
     t.integer  "bsc_id"
-    t.boolean  "spam",                       :default => false
+    t.boolean  "spam",                         :default => false
+    t.integer  "responsible_id"
+    t.integer  "closed_by_id"
   end
 
   add_index "tasks", ["requestor_id"], :name => "index_tasks_on_requestor_id"

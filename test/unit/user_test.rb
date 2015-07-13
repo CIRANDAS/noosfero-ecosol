@@ -1,5 +1,5 @@
 # encoding: UTF-8
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class UserTest < ActiveSupport::TestCase
   # Be sure to include AuthenticatedTestHelper in test/test_helper.rb instead.
@@ -85,6 +85,14 @@ class UserTest < ActiveSupport::TestCase
 
     assert_equal users_count + 1, User.count
     assert_equal person_count + 1, Person.count
+  end
+
+  def test_should_create_person_with_identifier_different_from_login
+    user = User.create!(:login => 'new_user', :email => 'new_user@example.com', :password => 'test', :password_confirmation => 'test', :person_data => {:identifier => "new_test"})
+
+    assert Person.exists?(['user_id = ?', user.id])
+
+    assert user.login != user.person.identifier
   end
 
   def test_login_validation
@@ -297,9 +305,20 @@ class UserTest < ActiveSupport::TestCase
 
   should 'not has email activation pending if not have environment' do
     user = create_user('cooler')
-    user.expects(:environment).returns(nil)
+    user.expects(:environment).returns(nil).at_least_once
     EmailActivation.create!(:requestor => user.person, :target => Environment.default)
     assert !user.email_activation_pending?
+  end
+
+  should 'has moderate registration pending' do
+    user = create_user('cooler')
+    ModerateUserRegistration.create!(:requestor => user.person, :target => Environment.default)
+    assert user.moderate_registration_pending?
+  end
+
+  should 'not has moderate registration pending if not have a pending task' do
+    user = create_user('cooler')
+    assert !user.moderate_registration_pending?
   end
 
   should 'be able to use [] operator to find users by login' do
@@ -344,7 +363,7 @@ class UserTest < ActiveSupport::TestCase
     Person.any_instance.stubs(:created_at).returns(DateTime.parse('16-08-2010'))
     expected_hash = {
       'login' => 'x_and_y', 'is_admin' => true, 'since_month' => 8,
-      'chat_enabled' => false, 'since_year' => 2010, 'email_domain' => nil, 
+      'chat_enabled' => false, 'since_year' => 2010, 'email_domain' => nil,
       'amount_of_friends' => 0, 'friends_list' => {}, 'enterprises' => [],
     }
 
@@ -451,9 +470,9 @@ class UserTest < ActiveSupport::TestCase
 
   should 'respond name with user name attribute' do
     user = create_user('testuser')
+    user.login = 'Login User'
     user.person = nil
     user.name = 'Another User'
-    user.login = 'Login User'
     assert_equal 'Another User', user.name
   end
 
@@ -526,9 +545,20 @@ class UserTest < ActiveSupport::TestCase
     assert user.activated?
   end
 
-  should 'delay activation check' do
+  should 'delay activation check with default time' do
     user = new_user
-    assert_match /UserActivationJob/, Delayed::Job.last.handler
+    job = Delayed::Job.last
+    assert_match /UserActivationJob/, job.handler
+    assert_equal 72, ((job.run_at - user.created_at)/1.hour).round
+  end
+
+  should 'delay activation check with custom time' do
+    NOOSFERO_CONF.stubs(:[]).with('hours_until_user_activation_check').returns(240)
+    NOOSFERO_CONF.stubs(:[]).with('exclude_profile_identifier_pattern')
+    user = new_user
+    job = Delayed::Job.last
+    assert_match /UserActivationJob/, job.handler
+    assert_equal 240, ((job.run_at - user.created_at)/1.hour).round
   end
 
   should 'not create job to check activation to template users' do

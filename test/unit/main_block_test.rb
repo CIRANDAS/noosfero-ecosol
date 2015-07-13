@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class MainBlockTest < ActiveSupport::TestCase
 
@@ -27,6 +27,10 @@ class MainBlockTest < ActiveSupport::TestCase
     block = MainBlock.new(:display => 'never')
     block.stubs(:owner).returns(env)
     assert !block.visible?
+  end
+
+  should 'guarantee main block is always visible to everybody' do
+    assert_equal MainBlock.new.display_user_options, {"all"=>_('All users')}
   end
 
 end

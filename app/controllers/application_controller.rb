@@ -9,6 +9,8 @@ class ApplicationController < ActionController::Base
   before_filter :allow_cross_domain_access
   before_filter :login_required, :if => :private_environment?
   before_filter :verify_members_whitelist, :if => [:private_environment?, :user]
+  before_filter :redirect_to_current_user
+  before_filter :authorize_profiler if defined? Rack::MiniProfiler
   around_filter :set_time_zone
 
   def verify_members_whitelist
@@ -24,41 +26,13 @@ class ApplicationController < ActionController::Base
   protected
 
   def set_time_zone
-    old_time_zone = Time.zone
-    Time.zone = browser_timezone if browser_timezone.present?
+    return yield unless (utc_offset = cookies['browser.tzoffset']).present?
+    utc_offset = utc_offset.to_i
+    gmt_offset = if utc_offset == 0 then nil elsif utc_offset > 0 then -utc_offset else "+#{-utc_offset}" end
+    Time.use_zone("Etc/GMT#{gmt_offset}"){ yield }
+  rescue ArgumentError
     yield
-  ensure
-    Time.zone = old_time_zone
   end
-
-  def browser_timezone
-    cookies['browser.timezone']
-  end
-
-  cattr_accessor :controller_path_class
-  self.controller_path_class = {}
-
-  def default_url_options options={}
-    #if @domain or (@profile and @profile.default_protocol)
-      #protocol = if @profile then @profile.default_protocol else @domain.protocol end
-      #options.merge! :protocol => protocol if protocol != 'http'
-    #end
-    options[:protocol] ||= '//'
-
-    # Only use profile's custom domains for the profiles and the account controllers.
-    # This avoids redirects and multiple URLs for one specific resource
-    if controller_path = options[:controller] || self.class.controller_path
-      controller = (self.class.controller_path_class[controller_path] ||= "#{controller_path}_controller".camelize.constantize rescue nil)
-      profile_needed = controller.profile_needed rescue false
-      if controller and not profile_needed and not controller == AccountController
-        options.merge! :host => environment.default_hostname, :only_path => false
-      end
-    end
-
-    options
-  end
-
-  include UrlHelper
 
   def allow_cross_domain_access
     origin = request.headers['Origin']
@@ -75,6 +49,7 @@ class ApplicationController < ActionController::Base
   end
 
   include ApplicationHelper
+
   layout :get_layout
   def get_layout
     return nil if request.format == :js or request.xhr?
@@ -109,10 +84,10 @@ class ApplicationController < ActionController::Base
   before_filter :set_locale
   def set_locale
     FastGettext.available_locales = environment.available_locales
-    FastGettext.default_locale = environment.default_locale
+    FastGettext.default_locale = environment.default_locale || 'en'
     FastGettext.locale = (params[:lang] || session[:lang] || environment.default_locale || request.env['HTTP_ACCEPT_LANGUAGE'] || 'en')
-    I18n.locale = FastGettext.locale
-    I18n.default_locale = FastGettext.default_locale
+    I18n.locale = FastGettext.locale.to_s.gsub '_', '-'
+    I18n.default_locale = FastGettext.default_locale.to_s.gsub '_', '-'
     if params[:lang]
       session[:lang] = params[:lang]
     end
@@ -160,6 +135,9 @@ class ApplicationController < ActionController::Base
 
   # TODO: move this logic somewhere else (Domain class?)
   def detect_stuff_by_domain
+    # Sets text domain based on request host for custom internationalization
+    FastGettext.text_domain = Domain.custom_locale(request.host)
+
     @domain = Domain.find_by_name(request.host)
     if @domain.nil?
       @environment = Environment.default
@@ -182,7 +160,7 @@ class ApplicationController < ActionController::Base
       if @domain.profile and params[:profile].present? and params[:profile] != @domain.profile.identifier
         @profile = @environment.profiles.find_by_identifier params[:profile]
         return render_not_found if @profile.blank?
-        redirect_to params.merge(:host => @profile.default_hostname, :protocol => @profile.default_protocol)
+        redirect_to url_for(params.merge host: @profile.default_hostname, protocol: @profile.default_protocol)
       end
     end
   end
@@ -197,7 +175,7 @@ class ApplicationController < ActionController::Base
   def render_not_found(path = nil)
     @no_design_blocks = true
     @path ||= request.path
-    render :template => 'shared/not_found.html.erb', :status => 404, :layout => get_layout
+    render template: 'shared/not_found', status: 404, layout: get_layout
   end
   alias :render_404 :render_not_found
 
@@ -205,7 +183,7 @@ class ApplicationController < ActionController::Base
     @no_design_blocks = true
     @message = message
     @title = title
-    render :template => 'shared/access_denied.html.erb', :status => 403
+    render template: 'shared/access_denied', status: 403
   end
 
   def load_category
@@ -218,22 +196,17 @@ class ApplicationController < ActionController::Base
     end
   end
 
-  def find_by_contents(asset, scope, query, paginate_options={:page => 1}, options={})
-    plugins.dispatch_first(:find_by_contents, asset, scope, query, paginate_options, options) ||
-    fallback_find_by_contents(asset, scope, query, paginate_options, options)
+  def authorize_profiler
+    Rack::MiniProfiler.authorize_request if user and user.is_admin?
   end
+
+  include SearchTermHelper
+
+  private
 
   def autocomplete asset, scope, query, paginate_options={:page => 1}, options={:field => 'name'}
     plugins.dispatch_first(:autocomplete, asset, scope, query, paginate_options, options) ||
     fallback_autocomplete(asset, scope, query, paginate_options, options)
-  end
-
-  private
-
-  def fallback_find_by_contents(asset, scope, query, paginate_options, options)
-    scope = scope.like_search(query) unless query.blank?
-    scope = scope.send(options[:filter]) unless options[:filter].blank?
-    {:results => scope.paginate(paginate_options)}
   end
 
   def fallback_autocomplete asset, scope, query, paginate_options, options
@@ -245,8 +218,29 @@ class ApplicationController < ActionController::Base
     {:results => scope.paginate(paginate_options)}
   end
 
+  def find_by_contents(asset, context, scope, query, paginate_options={:page => 1}, options={})
+    scope = scope.with_templates(options[:template_id]) unless options[:template_id].blank?
+    search = plugins.dispatch_first(:find_by_contents, asset, scope, query, paginate_options, options)
+    register_search_term(query, scope.count, search[:results].count, context, asset)
+    search
+  end
+
+  def find_suggestions(query, context, asset, options={})
+    plugins.dispatch_first(:find_suggestions, query, context, asset, options)
+  end
+
   def private_environment?
     @environment.enabled?(:restrict_to_members)
+  end
+
+  def redirect_to_current_user
+    if params[:profile] == '~'
+      if logged_in?
+        redirect_to url_for(params.merge profile: user.identifier)
+      else
+        render_not_found
+      end
+    end
   end
 
 end

@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class OrganizationTest < ActiveSupport::TestCase
   fixtures :profiles
@@ -130,7 +130,7 @@ class OrganizationTest < ActiveSupport::TestCase
 
   should 'list pending enterprise validations' do
     org = Organization.new
-    assert_kind_of ActiveRecord::Relation, org.pending_validations
+    assert org.pending_validations.empty?
   end
 
   should 'be able to find a pending validation by its code' do
@@ -148,7 +148,7 @@ class OrganizationTest < ActiveSupport::TestCase
 
   should 'be able to find already processed validations' do
     org = Organization.new
-    assert_kind_of ActiveRecord::Relation, org.processed_validations
+    assert org.processed_validations.empty?
   end
 
   should 'be able to find an already processed validation by its code' do
@@ -188,7 +188,7 @@ class OrganizationTest < ActiveSupport::TestCase
     org.foundation_year = 20.07
     org.valid?
     assert org.errors[:foundation_year.to_s].present?
-    
+
     org.foundation_year = 2007
     org.valid?
     assert ! org.errors[:foundation_year.to_s].present?
@@ -208,7 +208,7 @@ class OrganizationTest < ActiveSupport::TestCase
 
     assert o.members.include?(p), "Organization should add the new member"
   end
-  
+
   should 'allow to remove members' do
     c = fast_create(Organization)
     p = create_user('myothertestuser').person
@@ -383,6 +383,33 @@ class OrganizationTest < ActiveSupport::TestCase
     assert !organization.errors[:cnpj.to_s].present?
   end
 
+  should 'get members by role' do
+    community = fast_create(Community)
+    role1 = Role.create!(:name => 'role1')
+    person1 = fast_create(Person)
+    community.affiliate(person1, role1)
+    role2 = Role.create!(:name => 'role2')
+    person2 = fast_create(Person)
+    community.affiliate(person2, role2)
+
+    assert_equal [person1], community.members_by_role([role1])
+  end
+
+  should 'get members by more than one role' do
+    community = fast_create(Community)
+    role1 = Role.create!(:name => 'role1')
+    person1 = fast_create(Person)
+    community.affiliate(person1, role1)
+    role2 = Role.create!(:name => 'role2')
+    person2 = fast_create(Person)
+    community.affiliate(person2, role2)
+    role3 = Role.create!(:name => 'role3')
+    person3 = fast_create(Person)
+    community.affiliate(person3, role3)
+
+    assert_equivalent [person2, person3], community.members_by_role([role2, role3])
+  end
+
   should 'return members by role in a json format' do
     organization = fast_create(Organization)
     p1 = create_user('person-1').person
@@ -423,6 +450,31 @@ class OrganizationTest < ActiveSupport::TestCase
       organization.remove_member(member)
       organization.reload
     end
+  end
+
+  should 'check if a community admin user is really a community admin' do
+    c = fast_create(Organization, :name => 'my test profile', :identifier => 'mytestprofile')
+    admin = create_user('adminuser').person
+    c.add_admin(admin)
+   
+    assert c.is_admin?(admin)
+  end
+
+  should 'a member user not be a community admin' do
+    c = fast_create(Organization, :name => 'my test profile', :identifier => 'mytestprofile')
+    admin = create_user('adminuser').person
+    c.add_admin(admin)
+
+    member = create_user('memberuser').person
+    c.add_member(member)
+    assert !c.is_admin?(member)
+  end
+
+  should 'a moderator user not be a community admin' do
+    c = fast_create(Organization, :name => 'my test profile', :identifier => 'mytestprofile')
+    moderator = create_user('moderatoruser').person
+    c.add_moderator(moderator)
+    assert !c.is_admin?(moderator)
   end
 
 end

@@ -6,8 +6,7 @@ Noosfero::Application.configure do
   # since you don't have to restart the webserver when you make code changes.
   config.cache_classes = false
 
-  # Log error messages when you accidentally call methods on nil.
-  config.whiny_nils = true
+  config.eager_load = false
 
   # Show full error reports and disable caching
   config.action_controller.perform_caching             = false
@@ -24,10 +23,6 @@ Noosfero::Application.configure do
   # Raise exception on mass assignment protection for Active Record models
   config.active_record.mass_assignment_sanitizer = :strict
 
-  # Log the query plan for queries taking more than this (works
-  # with SQLite, MySQL, and PostgreSQL)
-  config.active_record.auto_explain_threshold_in_seconds = nil
-
   # Do not compress assets
   config.assets.compress = false
 
@@ -35,4 +30,8 @@ Noosfero::Application.configure do
   config.assets.debug = true
 
   config.consider_all_requests_local = true
+
+  # send emails to /tmp/mails
+  config.action_mailer.delivery_method = :file
+
 end

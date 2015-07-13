@@ -4,7 +4,10 @@ class Enterprise < Organization
 
   attr_accessible :business_name, :address_reference, :district, :tag_list, :organization_website, :historic_and_current_context, :activities_short_description, :products_per_catalog_page
 
-  SEARCH_DISPLAYS += %w[map full]
+  SEARCH_FILTERS = {
+    :order => %w[more_recent more_popular more_active],
+    :display => %w[compact full map]
+  }
 
   def self.type_name
     _('Enterprise')
@@ -12,19 +15,21 @@ class Enterprise < Organization
 
   N_('Enterprise')
 
+  acts_as_trackable after_add: proc{ |p, t| notify_activity t }
+
   has_many :products, :foreign_key => :profile_id, :dependent => :destroy
   has_many :product_categories, :through => :products
   has_many :inputs, :through => :products
   has_many :production_costs, :as => :owner
 
   has_many :favorite_enterprise_people
-  has_many :fans, through: :favorite_enterprise_people, source: :person
+  has_many :fans, source: :person, through: :favorite_enterprise_people
 
   N_('Organization website'); N_('Historic and current context'); N_('Activities short description'); N_('City'); N_('State'); N_('Country'); N_('ZIP code')
 
   settings_items :organization_website, :historic_and_current_context, :activities_short_description
 
-  settings_items :products_per_catalog_page, :type => :integer, :default => 6
+  settings_items :products_per_catalog_page, :type => :integer, :default => 18
   alias_method :products_per_catalog_page_before_type_cast, :products_per_catalog_page
   validates_numericality_of :products_per_catalog_page, :allow_nil => true, :greater_than => 0
 
@@ -62,7 +67,7 @@ class Enterprise < Organization
   end
 
   def highlighted_products_with_image(options = {})
-    Product.find(:all, {:conditions => {:highlighted => true}, :joins => :image}.merge(options))
+    Product.where(:highlighted => true).joins(:image)
   end
 
   def required_fields
@@ -95,12 +100,17 @@ class Enterprise < Organization
     self.tasks.where(:type => 'EnterpriseActivation').first
   end
 
-  def enable(owner)
-    return if enabled
+  def enable(owner = nil)
+    return if self.enabled
     # must be set first for the following to work
     self.enabled = true
+
     self.affiliate owner, Profile::Roles.all_roles(self.environment.id) if owner
-    self.apply_template template if self.environment.replace_enterprise_template_when_enable
+    if self.environment.replace_enterprise_template_when_enable
+      self.articles.destroy_all
+      self.apply_template template
+      self.home_page = self.articles(true).where(type: 'EnterpriseHomepage').first
+    end
     self.activation_task.update_attribute :status, Task::Status::FINISHED rescue nil
     self.save(:validate => false)
   end
@@ -159,7 +169,7 @@ class Enterprise < Organization
   end
 
   def default_template
-    environment.enterprise_template
+    environment.enterprise_default_template
   end
 
   def template_with_inactive_enterprise
@@ -185,10 +195,6 @@ class Enterprise < Organization
     true
   end
 
-  def activities
-    Scrap.find_by_sql("SELECT id, updated_at, 'Scrap' AS klass FROM scraps WHERE scraps.receiver_id = #{self.id} AND scraps.scrap_id IS NULL UNION SELECT id, updated_at, 'ActionTracker::Record' AS klass FROM action_tracker WHERE action_tracker.target_id = #{self.id} UNION SELECT action_tracker.id, action_tracker.updated_at, 'ActionTracker::Record' AS klass FROM action_tracker INNER JOIN articles ON action_tracker.target_id = articles.id WHERE articles.profile_id = #{self.id} AND action_tracker.target_type = 'Article' ORDER BY updated_at DESC")
-  end
-
   def catalog_url
     { :profile => identifier, :controller => 'catalog'}
   end
@@ -196,5 +202,10 @@ class Enterprise < Organization
   def more_recent_label
     ''
   end
+
+  def followed_by? person
+    super or self.fans.where(id: person.id).count > 0
+  end
+
 
 end

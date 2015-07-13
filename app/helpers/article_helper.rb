@@ -12,6 +12,7 @@ module ArticleHelper
     @article = article
 
     visibility_options(@article, tokenized_children) +
+    topic_creation(@article) +
     content_tag('h4', _('Options')) +
     content_tag('div',
       (article.profile.has_members? ?
@@ -55,14 +56,7 @@ module ArticleHelper
         'div',
         check_box(:article, :display_versions) +
         content_tag('label', _('I want this article to display a link to older versions'), :for => 'article_display_versions')
-      ) : '') +
-
-      (article.forum? && article.profile.community? ?
-      content_tag(
-        'div',
-        check_box(:article, :allows_members_to_create_topics) +
-        content_tag('label', _('Allow members to create topics'), :for => 'article_allows_members_to_create_topics')
-        ) : '')
+      ) : '')
     )
   end
 
@@ -76,12 +70,75 @@ module ArticleHelper
       content_tag('div',
         radio_button(:article, :published, false) +
           content_tag('label', _('Private'), :for => 'article_published_false', :id => "label_private")
-       ) +
-      (article.profile.community? ? content_tag('div',
-        content_tag('label', _('Fill in the search field to add the exception users to see this content'), :id => "text-input-search-exception-users") +
-        token_input_field_tag(:q, 'search-article-privacy-exceptions', {:action => 'search_article_privacy_exceptions'},
-          {:focus => false, :hint_text => _('Type in a search term for a user'), :pre_populate => tokenized_children})) :
-          ''))
+      ) +
+      privacity_exceptions(article, tokenized_children)
+    )
+  end
+
+  def topic_creation(article)
+    return '' unless article.forum?
+
+    general_options = Forum::TopicCreation.general_options(article)
+    slider_options = {:id => 'topic-creation-slider'}
+    slider_options = general_options.keys.inject(slider_options) do |result, option|
+      result.merge!({'data-'+option => general_options[option]})
+    end
+
+    content_tag('h4', _('Topic creation')) +
+    content_tag( 'small', _('Who will be able to create new topics on this forum?')) +
+    content_tag('div', '', slider_options) +
+    hidden_field_tag('article[topic_creation]', article.topic_creation) +
+    javascript_include_tag('topic-creation-config')
+  end
+
+  def privacity_exceptions(article, tokenized_children)
+    content_tag('div',
+      content_tag('div',
+        (
+          if article.profile
+            add_option_to_followers(article, tokenized_children)
+          else
+            ''
+          end
+        )
+      ),
+      :style => "margin-left:10px"
+    )
+  end
+
+  def add_option_to_followers(article, tokenized_children)
+    label_message = article.profile.organization? ? _('For all community members') : _('For all your friends')
+
+    check_box(
+      :article,
+      :show_to_followers,
+      {:class => "custom_privacy_option"}
+    ) +
+    content_tag(
+      'label',
+      label_message,
+      :for => 'article_show_to_followers',
+      :id => 'label_show_to_followers'
+    ) +
+    (article.profile.community? ?
+      content_tag(
+        'div',
+        content_tag(
+          'label',
+          _('Fill in the search field to add the exception users to see this content'),
+          :id => "text-input-search-exception-users"
+        ) +
+        token_input_field_tag(
+          :q,
+          'search-article-privacy-exceptions',
+          {:action => 'search_article_privacy_exceptions'},
+          {
+            :focus => false,
+            :hint_text => _('Type in a search term for a user'),
+            :pre_populate => tokenized_children
+          }
+        )
+      ) : '')
   end
 
   def prepare_to_token_input(array)

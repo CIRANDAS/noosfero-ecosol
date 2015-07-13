@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class CmsHelperTest < ActionView::TestCase
 
@@ -10,9 +10,9 @@ class CmsHelperTest < ActionView::TestCase
 
   should 'show default options for article' do
     result = options_for_article(build(RssFeed, :profile => Profile.new))
-    assert_match /id="article_published_true" name="article\[published\]" type="radio" value="true"/, result
-    assert_match /id="article_published_false" name="article\[published\]" type="radio" value="false"/, result
-    assert_match /id="article_accept_comments" name="article\[accept_comments\]" type="checkbox" value="1"/, result
+    assert_tag_in_string result, tag: 'input', attributes: {id: 'article_published_true',  name:'article[published]', type: 'radio', value: 'true'}
+    assert_tag_in_string result, tag: 'input', attributes: {id: 'article_published_false', name:'article[published]', type: 'radio', value: 'false'}
+    assert_tag_in_string result, tag: 'input', attributes: {id: 'article_accept_comments', name:'article[accept_comments]', type: 'checkbox', value: '1'}
   end
 
   should 'show custom options for blog' do
@@ -48,41 +48,13 @@ class CmsHelperTest < ActionView::TestCase
     result = link_to_article(file)
   end
 
-  should 'display spread button when profile is a person' do
+  should 'display spread button' do
     plugins.stubs(:dispatch).returns([])
     profile = fast_create(Person)
     article = fast_create(TinyMceArticle, :name => 'My article', :profile_id => profile.id)
-    expects(:link_to).with('Spread this', {:action => 'publish', :id => article.id}, :class => 'button with-text icon-spread', :title => nil)
+    expects(:link_to).with('Spread this', {:action => 'publish', :id => article.id}, :class => 'button with-text icon-spread colorbox', :title => nil)
 
-    result = display_spread_button(profile, article)
-  end
-
-  should 'display spread button when profile is a community and env has portal_community' do
-    plugins.stubs(:dispatch).returns([])
-    env = fast_create(Environment)
-    env.expects(:portal_community).returns(true)
-    profile = fast_create(Community, :environment_id => env.id)
-    expects(:environment).returns(env)
-
-    article = fast_create(TinyMceArticle, :name => 'My article', :profile_id => profile.id)
-
-    expects(:link_to).with('Spread this', {:action => 'publish_on_portal_community', :id => article.id}, :class => 'button with-text icon-spread', :title => nil)
-
-    result = display_spread_button(profile, article)
-  end
-
-  should 'not display spread button when profile is a community and env has not portal_community' do
-    plugins.stubs(:dispatch).returns([])
-    env = fast_create(Environment)
-    env.expects(:portal_community).returns(nil)
-    profile = fast_create(Community, :environment_id => env.id)
-    expects(:environment).returns(env)
-
-    article = fast_create(TinyMceArticle, :name => 'My article', :profile_id => profile.id)
-
-    expects(:link_to).with('Spread this', {:action => 'publish_on_portal_community', :id => article.id}, :class => 'button with-text icon-spread', :title => nil).never
-
-    result = display_spread_button(profile, article)
+    result = display_spread_button(article)
   end
 
   should 'display delete_button to folder' do

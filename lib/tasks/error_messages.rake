@@ -1,9 +1,10 @@
-templates = Dir.glob(Rails.root.join('public', '*.html.erb'))
+root = Pathname(File.dirname(__FILE__)).join('../../').expand_path
+templates = Dir.glob(root.join('public', '*.html.erb'))
 targets = []
 templates.each do |template|
   target = template.gsub(/.erb$/, '')
   targets << target
-  file target => [:makemo, template] do
+  file target => [:makemo, template, :environment] do
     require 'erb'
     erb = ERB.new(File.read(template))
     File.open(target, 'w') do |file|
@@ -16,6 +17,6 @@ end
 namespace :noosfero do
   namespace 'error-pages' do
     desc 'Translates Noosfero error pages'
-    task :translate => [:environment] + targets
+    task :translate => targets
   end
 end

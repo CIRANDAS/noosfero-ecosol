@@ -1,5 +1,5 @@
 # encoding: UTF-8
-require File.dirname(__FILE__) + '/../test_helper'
+require_relative "../test_helper"
 
 class TinyMceArticleTest < ActiveSupport::TestCase
 
@@ -9,7 +9,7 @@ class TinyMceArticleTest < ActiveSupport::TestCase
   end
   attr_reader :profile
 
-  # this test can be removed when we get real tests for TinyMceArticle 
+  # this test can be removed when we get real tests for TinyMceArticle
   should 'be an article' do
     assert_subclass TextArticle, TinyMceArticle
   end
@@ -42,11 +42,6 @@ class TinyMceArticleTest < ActiveSupport::TestCase
   should 'convert entities characters to UTF-8 instead of ISO-8859-1' do
     article = create(TinyMceArticle, :profile => profile, :name => 'teste ' + Time.now.to_s, :body => '<a title="inform&#225;tica">link</a>')
     assert(article.body.is_utf8?, "%s expected to be valid UTF-8 content" % article.body.inspect)
-  end
-
-  should 'fix tinymce mess with itheora comments for IE from tiny mce article body' do
-    article = create(TinyMceArticle, :profile => profile, :name => 'article', :abstract => 'abstract', :body => "the <!--–-[if IE]--> just for ie... <!--[endif]-->")
-    assert_equal "the <!–-[if IE]> just for ie... <![endif]-–>", article.body.html_safe
   end
 
   should 'remove iframe if it is not from a trusted site' do
@@ -87,22 +82,16 @@ class TinyMceArticleTest < ActiveSupport::TestCase
     assert_no_tag_in_string article.body, :tag => 'iframe', :attributes => { :src => "http://untrusted_site.com/videos.ogg"}
   end
 
-  should 'remove iframe if it has 2 or more src' do
+  should 'consider first src if there is 2 or more src' do
     assert_includes Environment.default.trusted_sites_for_iframe, 'itheora.org'
 
     article = create(TinyMceArticle, :profile => profile, :name => 'article', :abstract => 'abstract', :body => "<iframe src='http://itheora.org/videos.ogg' src='http://untrusted_site.com/videos.ogg'></iframe>")
-    assert_equal '', article.body
-  end
-
-  #TinymMCE convert config={"key":(.*)} in config={&quotkey&quot:(.*)}
-  should 'not replace &quot with &amp;quot; when adding an Archive.org video' do
-    article = create(TinyMceArticle, :profile => profile, :name => 'article', :abstract => 'abstract', :body => "<embed flashvars='config={&quot;key&quot;:&quot;\#$b6eb72a0f2f1e29f3d4&quot;}'> </embed>")
-    assert_equal "<embed flashvars=\"config={&quot;key&quot;:&quot;\#$b6eb72a0f2f1e29f3d4&quot;}\"> </embed>", article.body
+    assert_tag_in_string article.body, :tag => 'iframe', :attributes => { :src => "http://itheora.org/videos.ogg"}
   end
 
   should 'not sanitize html comments' do
     article = TinyMceArticle.new
-    article.body = '<p><!-- <asdf> << aasdfa >>> --> <h1> Wellformed html code </h1>'
+    article.body = '<!-- <asdf> << aasdfa >>> --> <h1> Wellformed html code </h1>'
     article.valid?
 
     assert_match  /<!-- .* --> <h1> Wellformed html code <\/h1>/, article.body
@@ -243,7 +232,7 @@ end
       :profile => profile
     )
     assert_tag_in_string article.body, :tag => 'table',
-      :attributes => { :colspan => 2, :rowspan => 3 }
+      :attributes => { :colspan => '2', :rowspan => '3' }
   end
 
 end

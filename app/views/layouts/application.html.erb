@@ -1,5 +1,5 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="<%= html_language %>" lang="<%= html_language %>">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="<%= html_language %>" lang="<%= html_language %>" class="<%= h html_tag_classes %>">
   <head>
     <title><%= h page_title %></title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
@@ -52,6 +52,9 @@
       registerDocumentSize();
       // -->
     </script>
+    <div id="global-header">
+      <%= global_header %>
+    </div>
 
     <div id="accessibility_menu">
       <a href="#content" id="link_go_content"><span><%= _('Go to content') %></span></a>
@@ -68,7 +71,7 @@
 
         <div id="navigation_bar">
           <%= link_to "<span>"+ @environment.name() +"</span>",
-                      @environment.top_url,
+                        top_url,
                         :id=>"menu_link_to_envhome",
                         :title=>@environment.name  %>
           <% unless environment.enabled?(:disable_categories) %>
@@ -112,8 +115,13 @@
     </div><!-- id="wrap" -->
 
     <div id="footer">
-      <%= theme_footer %>
-    </div><!-- id="footer" -->
+      <div id="theme-footer">
+        <%= theme_footer %>
+      </div><!-- end id="theme-footer" -->
+      <div id="global-footer">
+        <%= global_footer %>
+      </div><!-- end id="global-footer" -->
+    </div><!-- end id="footer" -->
 
     <%# if you need to add HTML stuff to the layout, include it in
     app/views/shared/noosfero_layout_features.html.erb! %>

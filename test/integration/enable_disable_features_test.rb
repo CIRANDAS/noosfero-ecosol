@@ -1,6 +1,7 @@
-require "#{File.dirname(__FILE__)}/../test_helper"
+require_relative "../test_helper"
 
-class EnableDisableFeaturesTest < ActionController::IntegrationTest
+class EnableDisableFeaturesTest < ActionDispatch::IntegrationTest
+
   all_fixtures
 
   def test_enable_features
