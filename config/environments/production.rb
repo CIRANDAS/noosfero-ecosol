@@ -1,4 +1,7 @@
 Noosfero::Application.configure do
+
+  config.consider_all_requests_local = true
+
   # Settings specified here will take precedence over those in config/application.rb
 
   # The production environment is meant for finished, "live" apps.
@@ -11,7 +14,7 @@ Noosfero::Application.configure do
   # config.action_controller.perform_caching = true
 
   # Compress JavaScripts and CSS
-  config.assets.compress = true
+  config.assets.compress = false
 
   # Generate digests for assets URLs
   config.assets.digest = true
