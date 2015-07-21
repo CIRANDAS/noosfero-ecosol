@@ -7,6 +7,8 @@ class Product
   has_currency :price
   has_currency :discount
 
+  scope :alphabetically, -> { order 'products.name ASC' }
+
   scope :available, -> { where available: true }
   scope :unavailable, -> { where 'products.available <> true' }
   scope :archived, -> { where archived: true }
@@ -63,8 +65,8 @@ class Product
   scope :distributed, -> { where "products.type = 'SuppliersPlugin::DistributedProduct'" }
   scope :own, -> { where "products.type = 'Product'" }
 
-  scope :from_supplier, -> (supplier) { where 'suppliers_plugin_suppliers.id = ?', supplier.id }
-  scope :from_supplier_id, -> (supplier_id) { where 'suppliers_plugin_suppliers.id = ?', supplier_id }
+  scope :from_supplier, -> (supplier) { joins(:suppliers).where 'suppliers_plugin_suppliers.id = ?', supplier.id }
+  scope :from_supplier_id, -> (supplier_id) { joins(:suppliers).where 'suppliers_plugin_suppliers.id = ?', supplier_id }
 
   after_create :distribute_to_consumers
 
