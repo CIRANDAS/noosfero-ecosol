@@ -1,7 +1,10 @@
 require 'noosfero/multi_tenancy'
 
 class ApplicationController < ActionController::Base
+
   protect_from_forgery
+
+  include NoosferoHttpCaching
 
   before_filter :detect_stuff_by_domain
   before_filter :init_noosfero_plugins

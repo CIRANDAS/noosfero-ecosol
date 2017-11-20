@@ -59,8 +59,3 @@ module NoosferoHttpCaching
 
 end
 
-unless Rails.env.development?
-  middleware = Noosfero::Application.config.middleware
-  ActionController::Base.send(:include, NoosferoHttpCaching)
-  middleware.insert_before ::ActionDispatch::Cookies, NoosferoHttpCaching::Middleware
-end
